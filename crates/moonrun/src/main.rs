@@ -474,8 +474,9 @@ fn wasm_mode(
     args: &[String],
     no_stack_trace: bool,
     test_args: Option<String>,
+    time_limit: Option<u32>,
 ) -> anyhow::Result<()> {
-    let isolate = &mut v8::Isolate::new(Default::default());
+    let isolate = &mut v8::Isolate::new(v8::CreateParams::default());
     let scope = &mut v8::HandleScope::new(isolate);
     let context = v8::Context::new(scope, Default::default());
     let scope = &mut v8::ContextScope::new(scope, context);
@@ -529,7 +530,23 @@ fn wasm_mode(
     let script_origin = create_script_origin(scope, "wasm_mode_entry");
     let script = v8::Script::compile(scope, code, Some(&script_origin)).unwrap();
 
-    script.run(scope);
+    if let Some(limit) = time_limit {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(limit as u64 * 1000 + 200));
+            let _ = tx.send(());
+            println!(
+                r#"----- BEGIN MOON TEST RESULT -----
+Time Limit Exceeded
+----- END MOON TEST RESULT -----"#
+            );
+            std::process::exit(0);
+        });
+
+        script.run(scope);
+    } else {
+        script.run(scope);
+    }
     drop(dtors);
     Ok(())
 }
@@ -572,6 +589,9 @@ struct Commandline {
 
     #[clap(short, long)]
     interactive: bool,
+
+    #[clap(long)]
+    time_limit: Option<u32>,
 }
 
 fn run_interactive() -> anyhow::Result<()> {
@@ -595,7 +615,7 @@ fn run_interactive() -> anyhow::Result<()> {
             .collect::<Vec<_>>()
             .join(", ");
 
-        wasm_mode(Source::Bytes(&bytes_string), &[], false, None)?;
+        wasm_mode(Source::Bytes(&bytes_string), &[], false, None, None)?;
         const END_MARKER: [u8; 4] = [0xFF, 0xFE, 0xFD, 0xFC];
         io::stdout().write_all(&END_MARKER)?;
         io::stdout().write_all(b"\n")?;
@@ -643,6 +663,7 @@ fn main() -> anyhow::Result<()> {
                     &matches.args,
                     matches.no_stack_trace,
                     matches.test_args,
+                    matches.time_limit,
                 )
             }
             _ => anyhow::bail!("Unsupported file type"),

@@ -93,6 +93,10 @@ pub struct TestSubcommand {
     /// Run test in markdown file
     #[clap(long = "md", conflicts_with = "doc_test")]
     pub md_test: bool,
+
+    /// Set the time limit for the test
+    #[clap(long)]
+    pub time_limit: Option<u32>,
 }
 
 pub fn run_test(cli: UniversalFlags, cmd: TestSubcommand) -> anyhow::Result<i32> {
@@ -393,6 +397,7 @@ fn run_test_internal(
         auto_update,
         module,
         verbose,
+        cmd.time_limit,
     );
 
     if cli.trace {
@@ -409,6 +414,7 @@ fn do_run_test(
     auto_update: bool,
     module: ModuleDB,
     verbose: bool,
+    time_limit: Option<u32>
 ) -> anyhow::Result<i32> {
     let backend_hint = moonbuild_opt
         .test_opt
@@ -424,6 +430,7 @@ fn do_run_test(
         verbose,
         auto_update,
         module,
+        time_limit
     )?;
 
     // don't print test summary if build_only
