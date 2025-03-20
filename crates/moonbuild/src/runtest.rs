@@ -228,7 +228,7 @@ async fn run(
         subprocess.arg(path);
     }
     subprocess.args(args);
-    subprocess.args(&["--stack-size", "2048"]); // FIXME
+    subprocess.args(&["--stack-size", "4096"]); // FIXME
 
     let mut execution = subprocess
         .stdin(Stdio::null())
