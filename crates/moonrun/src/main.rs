@@ -543,9 +543,15 @@ Time Limit Exceeded
             std::process::exit(0);
         });
 
-        script.run(scope);
     } else {
+        let start_time = std::time::Instant::now();
+        
         script.run(scope);
+        
+        let duration = start_time.elapsed();
+
+        let duration_str = format!("{}", duration.as_secs_f64());
+        std::fs::write("duration.txt", duration_str).unwrap();
     }
     drop(dtors);
     Ok(())
