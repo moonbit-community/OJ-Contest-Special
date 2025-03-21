@@ -533,7 +533,7 @@ fn wasm_mode(
     if let Some(limit) = time_limit {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(limit as u64 * 1000));
+            std::thread::sleep(std::time::Duration::from_millis(limit as u64 * 1000 + 200));
             let _ = tx.send(());
             println!(
                 r#"----- BEGIN MOON TEST RESULT -----
