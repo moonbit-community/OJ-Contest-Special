@@ -651,9 +651,7 @@ fn main() -> anyhow::Result<()> {
             anyhow::bail!("no such file");
         }
 
-        if let Some(stack_size) = matches.stack_size {
-            set_flags_from_string(&format!("--stack-size={}", stack_size));
-        }
+        set_flags_from_string("--stack-size=2048");
 
         match file.extension().unwrap().to_str() {
             Some("wasm") => {
