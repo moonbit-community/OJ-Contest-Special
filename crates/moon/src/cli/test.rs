@@ -294,6 +294,7 @@ fn run_test_in_single_file(cli: &UniversalFlags, cmd: &TestSubcommand) -> anyhow
         cmd.update,
         module,
         cli.verbose,
+        cmd.time_limit,
     )
 }
 
@@ -446,6 +447,7 @@ pub(crate) struct TestLikeSubcommand<'a> {
     pub test_failure_json: bool,
     pub patch_file: &'a Option<PathBuf>,
     pub doc_test: bool,
+    pub time_limit: Option<u32>,
 }
 
 impl<'a> From<&'a TestSubcommand> for TestLikeSubcommand<'a> {
@@ -464,6 +466,7 @@ impl<'a> From<&'a TestSubcommand> for TestLikeSubcommand<'a> {
             test_failure_json: cmd.test_failure_json,
             patch_file: &cmd.patch_file,
             doc_test: cmd.doc_test,
+            time_limit: cmd.time_limit,
         }
     }
 }
@@ -483,6 +486,7 @@ impl<'a> From<&'a BenchSubcommand> for TestLikeSubcommand<'a> {
             test_failure_json: false,
             patch_file: &None,
             doc_test: false,
+            time_limit: None,
         }
     }
 }
