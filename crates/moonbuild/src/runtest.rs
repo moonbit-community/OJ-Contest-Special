@@ -16,6 +16,7 @@
 //
 // For inquiries, you can contact us via e-mail at jichuruanjian@idea.edu.cn.
 
+use crate::benchmark::BATCHBENCH;
 use crate::entry::{FileTestInfo, TestArgs, TestFailedStatus};
 use crate::expect::{snapshot_eq, ERROR, EXPECT_FAILED, FAILED, RUNTIME_ERROR, SNAPSHOT_TESTING};
 use crate::section_capture::{handle_stdout, SectionCapture};
@@ -23,8 +24,8 @@ use crate::section_capture::{handle_stdout, SectionCapture};
 use super::gen;
 use anyhow::{bail, Context};
 use moonutil::common::{
-    MoonbuildOpt, MooncOpt, DYN_EXT, MOON_COVERAGE_DELIMITER_BEGIN, MOON_COVERAGE_DELIMITER_END,
-    MOON_DOC_TEST_POSTFIX, MOON_MD_TEST_POSTFIX, MOON_TEST_DELIMITER_BEGIN,
+    MoonbuildOpt, MooncOpt, DOT_MBT_DOT_MD, DYN_EXT, MOON_COVERAGE_DELIMITER_BEGIN,
+    MOON_COVERAGE_DELIMITER_END, MOON_DOC_TEST_POSTFIX, MOON_TEST_DELIMITER_BEGIN,
     MOON_TEST_DELIMITER_END,
 };
 use moonutil::module::ModuleDB;
@@ -136,20 +137,32 @@ pub async fn run_native(
     let args = args.to_cli_args_for_native();
     if moonbuild_opt.use_tcc_run {
         let path = path.with_extension("c");
-        let rt_path = target_dir.join(format!("runtime.{}", DYN_EXT));
+        // TODO
+        let rt_path = target_dir.join(format!("libruntime.{}", DYN_EXT));
         let internal_tcc_path = &MOON_DIRS.internal_tcc_path;
+        let mut pre_args = vec![
+            format!("-I{}", MOON_DIRS.moon_include_path.display()),
+            format!("-L{}", MOON_DIRS.moon_lib_path.display()),
+            rt_path.display().to_string(),
+        ];
+        pre_args.extend(
+            moonbuild_opt
+                .dynamic_stub_libs
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(String::to_string),
+        );
+        pre_args.extend([
+            "-DMOONBIT_NATIVE_NO_SYS_HEADER".to_string(),
+            "-DMOONBIT_USE_SHARED_RUNTIME".to_string(),
+            "-run".to_string(),
+        ]);
         run(
             Some(internal_tcc_path.display().to_string().as_str()),
             &path,
             target_dir,
-            &[
-                format!("-I{}", MOON_DIRS.moon_include_path.display()),
-                format!("-L{}", MOON_DIRS.moon_lib_path.display()),
-                format!("-L{}", MOON_DIRS.moon_bin_path.display()),
-                rt_path.display().to_string(),
-                "-DMOONBIT_NATIVE_NO_SYS_HEADER".to_string(),
-                "-run".to_string(),
-            ],
+            &pre_args,
             &[args],
             file_test_info_map,
             verbose,
@@ -300,19 +313,13 @@ async fn run(
             }
 
             // ts.is_doc_test = ts.filename.contains(MOON_DOC_TEST_POSTFIX);
-            // ts.is_md_test = ts.filename.contains(MOON_MD_TEST_POSTFIX);
+            // ts.is_md_test = ts.filename.ends_with(DOT_MBT_DOT_MD);
 
             // // this is a hack for doc test, make the doc test patch filename be the original file name
             // if ts.is_doc_test || ts.is_md_test {
             //     ts.original_filename = Some(ts.filename.clone());
-            //     ts.filename = ts
-            //         .filename
-            //         .replace(MOON_DOC_TEST_POSTFIX, "")
-            //         .replace(&format!("{}.mbt", MOON_MD_TEST_POSTFIX), "");
-            //     ts.message = ts
-            //         .message
-            //         .replace(MOON_DOC_TEST_POSTFIX, "")
-            //         .replace(&format!("{}.mbt", MOON_MD_TEST_POSTFIX), "");
+            //     ts.filename = ts.filename.replace(MOON_DOC_TEST_POSTFIX, "");
+            //     ts.message = ts.message.replace(MOON_DOC_TEST_POSTFIX, "");
             // }
 
             test_statistics.push(ts);
@@ -369,6 +376,8 @@ async fn run(
             } else if return_message.starts_with(RUNTIME_ERROR) || return_message.starts_with(ERROR)
             {
                 res.push(Err(TestFailedStatus::RuntimeError(test_statistic)));
+            } else if return_message.starts_with(BATCHBENCH) {
+                res.push(Ok(test_statistic));
             } else if return_message.starts_with(FAILED) || !return_message.is_empty() {
                 // FAILED(moonbit) or something like "panic is expected"
                 res.push(Err(TestFailedStatus::Failed(test_statistic)));

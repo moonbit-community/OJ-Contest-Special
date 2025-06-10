@@ -17,9 +17,11 @@
 // For inquiries, you can contact us via e-mail at jichuruanjian@idea.edu.cn.
 
 use anyhow::bail;
-use moonutil::graph::get_example_cycle;
 use moonutil::module::ModuleDB;
-use moonutil::package::Package;
+use moonutil::package::{NativeLinkConfig, Package};
+use moonutil::{graph::get_example_cycle, package::Link};
+use std::fmt::Write;
+
 #[allow(unused)]
 use std::collections::HashSet;
 
@@ -57,8 +59,19 @@ pub fn topo_from_node(m: &ModuleDB, pkg: &Package) -> anyhow::Result<Vec<String>
     ) -> anyhow::Result<()> {
         visited.insert(pkg_full_name.to_string());
 
-        for neighbor in m.get_package_by_name(pkg_full_name).imports.iter() {
-            let neighbor_full_name = neighbor.path.make_full_path();
+        let pkg = m.get_package_by_name(pkg_full_name);
+        for neighbor in pkg.imports.iter() {
+            let mut neighbor_full_name = neighbor.path.make_full_path();
+            // if there is a pkg which overrides the `neighbor_full_name`, we should use the overrid pkg
+            if let Some(overrides) = pkg.overrides.as_ref() {
+                for over_ride in overrides.iter() {
+                    let override_pkg = m.get_package_by_name(over_ride);
+                    let implement = override_pkg.implement.as_ref().unwrap().clone();
+                    if implement == neighbor_full_name {
+                        neighbor_full_name = override_pkg.full_name();
+                    }
+                }
+            }
             if !visited.contains(&neighbor_full_name) {
                 dfs(m, &neighbor_full_name, stk, visited)?;
             }
@@ -113,4 +126,46 @@ pub fn self_in_test_import(pkg: &Package) -> bool {
     pkg.test_imports
         .iter()
         .any(|import| import.path.make_full_path() == current_pkg_full_path)
+}
+
+pub fn calc_link_args(m: &ModuleDB, pkg: &Package) -> Link {
+    let mut link = pkg.link.clone().unwrap_or_default();
+    // Add native link flags
+    for (_name, pkg) in m
+        .get_filtered_packages_and_its_deps_by_pkgname(&pkg.full_name())
+        .expect("Package not in DB")
+    {
+        if has_link_flags(&pkg) {
+            let link_native = link.native.get_or_insert(NativeLinkConfig::default());
+            let link_flags = link_native.cc_link_flags.get_or_insert(Default::default());
+            let new_link_flags = fmt_link_flags(&pkg);
+            link_flags.push_str(&new_link_flags);
+        }
+    }
+    link
+}
+
+fn has_link_flags(pkg: &Package) -> bool {
+    pkg.link_flags.is_some() || !pkg.link_search_paths.is_empty() || !pkg.link_libs.is_empty()
+}
+
+fn fmt_link_flags(pkg: &Package) -> String {
+    let mut out_str = String::new();
+    if let Some(flags) = &pkg.link_flags {
+        out_str.push(' ');
+        out_str.push_str(flags);
+    }
+    for link_search_path in &pkg.link_search_paths {
+        #[cfg(not(windows))]
+        write!(out_str, " -L{}", link_search_path).unwrap();
+        #[cfg(windows)]
+        write!(out_str, " /LIBPATH:{}", link_search_path).unwrap();
+    }
+    for link_lib in &pkg.link_libs {
+        #[cfg(not(windows))]
+        write!(out_str, " -l{}", link_lib).unwrap();
+        #[cfg(windows)]
+        write!(out_str, " {}.lib", link_lib).unwrap();
+    }
+    out_str
 }

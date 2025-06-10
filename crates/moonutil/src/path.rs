@@ -23,7 +23,9 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-#[derive(Clone)]
+use crate::common::SUB_PKG_POSTFIX;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PathComponent {
     pub components: Vec<String>,
 }
@@ -64,6 +66,12 @@ impl PathComponent {
     }
 }
 
+impl std::fmt::Display for PathComponent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.components.join("/"))
+    }
+}
+
 #[test]
 #[cfg(unix)]
 fn test_path_component_1() {
@@ -88,6 +96,7 @@ fn test_import_component_1() {
             is_3rd: true,
         },
         alias: None,
+        sub_package: false,
     };
     assert!(ic.path.make_full_path() == "a/b");
     let ic = ImportComponent {
@@ -99,6 +108,7 @@ fn test_import_component_1() {
             is_3rd: true,
         },
         alias: None,
+        sub_package: false,
     };
     assert!(ic.path.make_full_path() == "a/b");
 }
@@ -193,6 +203,7 @@ impl Debug for ImportPath {
 pub struct ImportComponent {
     pub path: ImportPath,
     pub alias: Option<String>,
+    pub sub_package: bool,
 }
 
 impl ImportComponent {
@@ -203,6 +214,14 @@ impl ImportComponent {
             .collect();
         components.extend(self.path.rel_path.components.iter().cloned());
         PathComponent { components }
+    }
+
+    pub fn make_full_path(&self) -> String {
+        if self.sub_package {
+            format!("{}{}", self.path.make_full_path(), SUB_PKG_POSTFIX)
+        } else {
+            self.path.make_full_path()
+        }
     }
 }
 

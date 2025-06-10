@@ -34,9 +34,9 @@ pub fn moonbit_test_driver_internal_execute(filename: MoonbitTestDriverInternalE
       }
       test_name = name
       try {
-        func!()
+        func()
       } catch {
-        Failure(e) | InspectError(e) | SnapshotError(e) => {
+        @moonbitlang/core/builtin.Failure(e) | @moonbitlang/core/builtin.InspectError(e) | @moonbitlang/core/builtin.SnapshotError(e) => {
           message = e
         }
         e => {
@@ -61,6 +61,7 @@ pub fn moonbit_test_driver_finish() -> Unit {
   // {COVERAGE_END}
 }
 
+#test_entry
 fn main {
   ()
 }

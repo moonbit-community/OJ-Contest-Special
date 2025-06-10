@@ -64,6 +64,14 @@ pub fn gen_bundle(
 ) -> anyhow::Result<N2BundleInput> {
     let mut dep_items = vec![];
     for (_, pkg) in m.get_all_packages().iter() {
+        // skip virtual moonbitlang/core/abort (gen_moonbitlang_abort_pkg)
+        if pkg
+            .full_name()
+            .starts_with(moonutil::common::MOONBITLANG_CORE)
+            && pkg.is_third_party
+        {
+            continue;
+        }
         let item = pkg_to_bundle_item(&m.source_dir, m.get_all_packages(), pkg, moonc_opt)?;
         dep_items.push(item);
     }
@@ -72,6 +80,9 @@ pub fn gen_bundle(
     let mut order = vec![];
     for node in nodes.iter() {
         let p = &m.get_package_by_name(node);
+        if p.virtual_pkg.is_some() {
+            continue;
+        }
         order.push(
             p.artifact
                 .with_extension("core")
@@ -85,7 +96,12 @@ pub fn gen_bundle(
         bundle_items: dep_items,
         bundle_order: N2BundleAll {
             order,
-            name: m.name.split('/').last().unwrap_or("bundle").to_string(),
+            name: m
+                .name
+                .split('/')
+                .next_back()
+                .unwrap_or("bundle")
+                .to_string(),
         },
     })
 }

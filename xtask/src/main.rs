@@ -21,6 +21,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 mod cmdtest;
+mod sync_docs;
 
 #[derive(Debug, clap::Parser)]
 struct Cli {
@@ -32,6 +33,9 @@ struct Cli {
 enum XSubcommands {
     #[command(name = "cmdtest")]
     CmdTest(CmdTest),
+
+    #[command(name = "sync-docs")]
+    SyncDocs(SyncDocs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -42,10 +46,17 @@ struct CmdTest {
     update: bool,
 }
 
+#[derive(Debug, clap::Parser)]
+struct SyncDocs {
+    #[arg(long)]
+    moonbit_docs_dir: PathBuf,
+}
+
 fn main() {
     let cli = Cli::parse();
     let code = match cli.subcommand {
         XSubcommands::CmdTest(t) => cmdtest::run::t(&t.file, t.update),
+        XSubcommands::SyncDocs(t) => sync_docs::run(&t.moonbit_docs_dir).map_or(1, |_| 0),
     };
     std::process::exit(code);
 }

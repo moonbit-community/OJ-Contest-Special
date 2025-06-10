@@ -19,8 +19,8 @@
 use crate::cond_expr::{CompileCondition, OptLevel};
 pub use crate::dirs::check_moon_mod_exists;
 use crate::module::{MoonMod, MoonModJSON};
-use crate::moon_dir::MOON_DIRS;
-use crate::package::{convert_pkg_json_to_package, MoonPkg, MoonPkgJSON, Package};
+use crate::package::{convert_pkg_json_to_package, MoonPkg, MoonPkgJSON, Package, VirtualPkg};
+use crate::path::PathComponent;
 use anyhow::{bail, Context};
 use clap::ValueEnum;
 use fs4::fs_std::FileExt;
@@ -32,13 +32,13 @@ use std::fs::File;
 use std::io::ErrorKind;
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
-use which::which;
 
 pub const MOON_MOD_JSON: &str = "moon.mod.json";
 pub const MOON_PKG_JSON: &str = "moon.pkg.json";
 pub const MOON_PID_NAME: &str = ".moon.pid";
 pub const MOONBITLANG_CORE: &str = "moonbitlang/core";
 pub const MOONBITLANG_COVERAGE: &str = "moonbitlang/core/coverage";
+pub const MOONBITLANG_ABORT: &str = "moonbitlang/core/abort";
 
 pub const MOON_TEST_DELIMITER_BEGIN: &str = "----- BEGIN MOON TEST RESULT -----";
 pub const MOON_TEST_DELIMITER_END: &str = "----- END MOON TEST RESULT -----";
@@ -61,11 +61,20 @@ pub const BLACKBOX_TEST_PATCH: &str = "_test.json";
 pub const MOON_DOC_TEST_POSTFIX: &str = "__moonbit_internal_doc_test";
 pub const MOON_MD_TEST_POSTFIX: &str = "__moonbit_internal_md_test";
 
+pub const DOT_MBT_DOT_MD: &str = ".mbt.md";
+pub const DOT_MBL: &str = ".mbl";
+pub const DOT_MBY: &str = ".mby";
+
 pub const MOON_BIN_DIR: &str = "__moonbin__";
 
 pub const MOONCAKE_BIN: &str = "$mooncake_bin";
 pub const MOD_DIR: &str = "$mod_dir";
 pub const PKG_DIR: &str = "$pkg_dir";
+
+pub const SINGLE_FILE_TEST_PACKAGE: &str = "moon/test/single";
+pub const SINGLE_FILE_TEST_MODULE: &str = "moon/test";
+
+pub const SUB_PKG_POSTFIX: &str = "_sub";
 
 pub const O_EXT: &str = if cfg!(windows) { "obj" } else { "o" };
 #[allow(unused)]
@@ -225,7 +234,7 @@ impl OutputFormat {
             OutputFormat::Wasm => "wasm",
             OutputFormat::Js => "js",
             OutputFormat::Native => "c",
-            OutputFormat::LLVM => "o",
+            OutputFormat::LLVM => O_EXT,
         }
     }
 }
@@ -438,6 +447,7 @@ pub struct MoonbuildOpt {
     /// Max parallel tasks to run in n2; `None` to use default
     pub parallelism: Option<usize>,
     pub use_tcc_run: bool,
+    pub dynamic_stub_libs: Option<Vec<String>>,
 }
 
 impl MoonbuildOpt {
@@ -593,6 +603,7 @@ impl CargoPathExt for Path {
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Default)]
 pub enum RunMode {
+    Bench,
     #[default]
     Build,
     Check,
@@ -605,6 +616,7 @@ pub enum RunMode {
 impl RunMode {
     pub fn to_dir_name(self) -> &'static str {
         match self {
+            Self::Bench => "bench",
             Self::Build | Self::Run => "build",
             Self::Check => "check",
             Self::Test => "test",
@@ -860,6 +872,8 @@ pub struct MbtTestInfo {
 pub struct MooncGenTestInfo {
     pub no_args_tests: IndexMap<FileName, Vec<MbtTestInfo>>,
     pub with_args_tests: IndexMap<FileName, Vec<MbtTestInfo>>,
+    #[serde(default)] // for backward compatibility
+    pub with_bench_args_tests: IndexMap<FileName, Vec<MbtTestInfo>>,
 }
 
 impl MooncGenTestInfo {
@@ -884,6 +898,21 @@ impl MooncGenTestInfo {
 
         result.push_str("let moonbit_test_driver_internal_with_args_tests = {\n");
         for (file, tests) in &self.with_args_tests {
+            result.push_str(&format!("  \"{}\": {{\n", file));
+            for test in tests {
+                result.push_str(&format!(
+                    "    {}: ({}, [\"{}\"]),\n",
+                    test.index,
+                    test.func,
+                    test.name.as_ref().unwrap_or(&default_name)
+                ));
+            }
+            result.push_str("  },\n");
+        }
+        result.push_str("}\n");
+
+        result.push_str("let moonbit_test_driver_internal_with_bench_args_tests = {\n");
+        for (file, tests) in &self.with_bench_args_tests {
             result.push_str(&format!("  \"{}\": {{\n", file));
             for test in tests {
                 result.push_str(&format!(
@@ -935,54 +964,14 @@ impl StringExt for str {
 
 pub fn set_native_backend_link_flags(
     run_mode: RunMode,
-    release: bool,
     target_backend: Option<TargetBackend>,
     module: &mut crate::module::ModuleDB,
-    tcc_run: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<String>> {
+    let mut all_stubs = Vec::new();
     match run_mode {
-        // need link-core for build, test and run
-        RunMode::Build | RunMode::Test | RunMode::Run => {
+        // need link-core for build, test, bench, and run
+        RunMode::Build | RunMode::Test | RunMode::Bench | RunMode::Run => {
             if target_backend == Some(TargetBackend::Native) {
-                // check if c compiler exists in PATH
-                #[cfg(unix)]
-                let compiler = "cc";
-                #[cfg(windows)]
-                let compiler = "cl";
-
-                let moon_include_path = &MOON_DIRS.moon_include_path;
-                let moon_lib_path = &MOON_DIRS.moon_lib_path;
-
-                // libmoonbitrun.o should under $MOON_HOME/lib
-                let libmoonbitrun_path = moon_lib_path.join("libmoonbitrun.o");
-
-                #[cfg(unix)] // only support tcc on unix
-                let get_fast_cc_flags = || -> Option<String> {
-                    Some(format!(
-                        "-I{} -L{} -DMOONBIT_NATIVE_NO_SYS_HEADER",
-                        moon_include_path.display(),
-                        moon_lib_path.display()
-                    ))
-                };
-
-                let get_default_cc_flags = || -> Option<String> {
-                    #[cfg(unix)]
-                    return Some(format!(
-                        "-I{} -O2 {} -fwrapv -fno-strict-aliasing",
-                        moon_include_path.display(),
-                        libmoonbitrun_path.display()
-                    ));
-                    #[cfg(windows)]
-                    return Some(format!("-I{}", moon_include_path.display()));
-                };
-
-                let get_default_cc_link_flag = || -> Option<String> {
-                    #[cfg(unix)]
-                    return Some("-lm".to_string());
-                    #[cfg(windows)]
-                    return None;
-                };
-
                 let mut link_configs = HashMap::new();
 
                 let all_pkgs = module.get_all_packages();
@@ -990,79 +979,36 @@ pub fn set_native_backend_link_flags(
                 for (_, pkg) in all_pkgs {
                     let existing_native = pkg.link.as_ref().and_then(|link| link.native.as_ref());
 
-                    let mut native_config = match existing_native {
-                        #[cfg(unix)] // only support tcc on unix
-                        // we have set the tcc_run flag outside
-                        // which implies users haven't set the native link config
-                        // so it's fine to override it here regardless of
-                        // the existing native link config
-                        _ if tcc_run => crate::package::NativeLinkConfig {
-                            exports: None,
-                            cc: Some(MOON_DIRS.internal_tcc_path.display().to_string()),
-                            cc_flags: get_fast_cc_flags(),
-                            cc_link_flags: None,
-                            stub_static_lib_deps: None,
-                        },
-                        Some(n) => crate::package::NativeLinkConfig {
-                            exports: n.exports.clone(),
-                            cc: n.cc.clone().or(Some(compiler.to_string())),
-                            cc_flags: n
-                                .cc_flags
-                                .as_ref()
-                                .map(|cc_flags| {
-                                    format!(
-                                        "-I{} -fwrapv -fno-strict-aliasing {}",
-                                        moon_include_path.display(),
-                                        cc_flags
-                                    )
-                                })
-                                .or(get_default_cc_flags()),
-                            cc_link_flags: n.cc_link_flags.clone().or(get_default_cc_link_flag()),
-                            stub_static_lib_deps: None,
-                        },
-                        None if (release
-                            || pkg.stub_static_lib.is_some()
-                            || which(compiler).is_ok()) =>
-                        {
-                            crate::package::NativeLinkConfig {
-                                exports: None,
-                                cc: Some(compiler.to_string()),
-                                cc_flags: get_default_cc_flags(),
-                                cc_link_flags: get_default_cc_link_flag(),
-                                stub_static_lib_deps: None,
-                            }
-                        }
-                        None => crate::package::NativeLinkConfig {
-                            exports: None,
-                            cc: Some(MOON_DIRS.internal_tcc_path.display().to_string()),
-                            cc_flags: Some(format!(
-                                "-L{} -I{} -DMOONBIT_NATIVE_NO_SYS_HEADER",
-                                moon_lib_path.display(),
-                                moon_include_path.display()
-                            )),
-                            cc_link_flags: None,
-                            stub_static_lib_deps: None,
-                        },
-                    };
+                    let mut native_config = existing_native.cloned().unwrap_or_default();
 
-                    let mut stub_static_lib = Vec::new();
+                    let mut stub_lib = Vec::new();
                     module
                         .get_filtered_packages_and_its_deps_by_pkgname(pkg.full_name().as_str())
                         .unwrap()
                         .iter()
                         .for_each(|(_, pkg)| {
-                            if pkg.stub_static_lib.is_some() {
-                                stub_static_lib.push(
+                            if pkg.stub_lib.is_some() {
+                                stub_lib.push(
                                     pkg.artifact
                                         .with_file_name(format!("lib{}.{}", pkg.last_name(), A_EXT))
+                                        .display()
+                                        .to_string(),
+                                );
+                                all_stubs.push(
+                                    pkg.artifact
+                                        .with_file_name(format!(
+                                            "lib{}.{}",
+                                            pkg.last_name(),
+                                            DYN_EXT
+                                        ))
                                         .display()
                                         .to_string(),
                                 );
                             }
                         });
 
-                    if !stub_static_lib.is_empty() {
-                        native_config.stub_static_lib_deps = Some(stub_static_lib);
+                    if !stub_lib.is_empty() {
+                        native_config.stub_lib_deps = Some(stub_lib);
                     }
 
                     link_configs.insert(
@@ -1078,8 +1024,146 @@ pub fn set_native_backend_link_flags(
                     module.get_package_by_name_mut_safe(&pkgname).unwrap().link = link_config;
                 }
             }
-            Ok(())
+            Ok(all_stubs)
         }
-        _ => Ok(()),
+        // don't use wildcard here to avoid possible mishandling if we add more modes in the future
+        RunMode::Bundle | RunMode::Check | RunMode::Format => Ok(all_stubs),
     }
+}
+
+pub enum PrePostBuild {
+    PreBuild,
+}
+
+impl PrePostBuild {
+    pub fn name(&self) -> String {
+        match self {
+            PrePostBuild::PreBuild => "pre-build".into(),
+        }
+    }
+
+    pub fn dbname(&self) -> String {
+        format!("{}.db", self.name())
+    }
+}
+
+pub fn execute_postadd_script(dir: &Path) -> anyhow::Result<()> {
+    if std::env::var("MOON_IGNORE_POSTADD").is_ok() {
+        return Ok(());
+    }
+    let m = read_module_desc_file_in_dir(dir)?;
+    if let Some(scripts) = &m.scripts {
+        if scripts.contains_key("postadd") {
+            let postadd = scripts
+                .get("postadd")
+                .unwrap()
+                .split(' ')
+                .collect::<Vec<_>>();
+            if !postadd.is_empty() {
+                let command = postadd[0];
+                let args = &postadd[1..];
+                let output = std::process::Command::new(command)
+                    .args(args)
+                    .current_dir(dir)
+                    .stdout(std::process::Stdio::inherit())
+                    .stderr(std::process::Stdio::inherit())
+                    .output()?;
+                if !output.status.success() {
+                    bail!(
+                        "failed to execute postadd script in {},\ncommand: {},\n{}",
+                        dir.display(),
+                        command,
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn gen_moonbitlang_abort_pkg(moonc_opt: &MooncOpt) -> Package {
+    let path_comp = PathComponent {
+        components: vec!["moonbitlang".to_string(), "core".to_string()],
+    };
+
+    let root_path = crate::moon_dir::core().join("abort");
+
+    Package {
+        is_main: false,
+        force_link: false,
+        is_third_party: true,
+        root_path: root_path.clone(),
+        root: path_comp,
+        rel: PathComponent {
+            components: vec!["abort".to_string()],
+        },
+        files: IndexMap::from([(root_path.join("abort.mbt"), CompileCondition::default())]),
+        wbtest_files: IndexMap::new(),
+        test_files: IndexMap::new(),
+        mbt_md_files: IndexMap::new(),
+        files_contain_test_block: vec![],
+        with_sub_package: None,
+        is_sub_package: false,
+        imports: vec![],
+        wbtest_imports: vec![],
+        test_imports: vec![],
+        generated_test_drivers: vec![],
+        artifact: crate::moon_dir::core_bundle(moonc_opt.link_opt.target_backend)
+            .join("abort")
+            .join("abort.core"),
+        link: None,
+        warn_list: None,
+        alert_list: None,
+        targets: None,
+        pre_build: None,
+        patch_file: None,
+        no_mi: false,
+        doc_test_patch_file: None,
+        install_path: None,
+        bin_name: None,
+        bin_target: moonc_opt.link_opt.target_backend,
+        enable_value_tracing: false,
+        supported_targets: HashSet::from_iter([moonc_opt.link_opt.target_backend]),
+        stub_lib: None,
+        virtual_pkg: Some(VirtualPkg { has_default: true }),
+        virtual_mbti_file: Some(root_path.join("abort.mbti")),
+        implement: None,
+        overrides: None,
+        link_flags: None,
+        link_libs: vec![],
+        link_search_paths: vec![],
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MbtMdHeader {
+    pub moonbit: Option<MbtMdSection>,
+}
+
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct MbtMdSection {
+    pub deps: Option<IndexMap<String, crate::dependency::SourceDependencyInfoJson>>,
+    pub backend: Option<String>,
+}
+
+pub fn parse_front_matter_config(single_file_path: &Path) -> anyhow::Result<Option<MbtMdHeader>> {
+    let single_file_string = single_file_path.display().to_string();
+    let front_matter_config: Option<MbtMdHeader> = if single_file_string.ends_with(DOT_MBT_DOT_MD) {
+        let content = std::fs::read_to_string(single_file_path)?;
+        let pattern = regex::Regex::new(r"(?s)^---\s*\n((?:[^\n]+\n)*?)---\s*\n")?;
+        if let Some(cap) = pattern.captures(&content) {
+            let yaml_content = cap.get(1).unwrap().as_str();
+            let config: MbtMdHeader = serde_yaml::from_str(yaml_content).map_err(|e| {
+                anyhow::anyhow!("Failed to parse front matter in markdown file: {}", e)
+            })?;
+
+            Some(config)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    Ok(front_matter_config)
 }

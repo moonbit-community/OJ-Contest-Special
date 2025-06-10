@@ -29,2448 +29,35 @@ use moonutil::{
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-#[test]
-fn test_design() {
-    let dir = TestDir::new("design.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["check"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["build"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    check(
-        get_stdout(&dir, ["run", "main1"]),
-        expect![[r#"
-            new_list
-            new_queue
-            new_list
-            new_stack
-            new_vector
-            main1
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["run", "main2"]),
-        expect![[r#"
-            new_list
-            new_queue
-            main2
-        "#]],
-    );
-
-    get_stdout(&dir, ["clean"]);
-    check(
-        get_stdout(&dir, ["run", "main2", "--target", "js", "--build-only"]),
-        expect![[r#"
-            {"artifacts_path":["$ROOT/target/js/release/build/main2/main2.js"]}
-        "#]],
-    );
-    assert!(dir.join("target/js/release/build/main2/main2.js").exists());
-}
-
-#[test]
-fn test_diamond_pkg_001() {
-    let dir = TestDir::new("diamond-pkg-001.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["check"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["build"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            B
-            A
-            C
-            main
-        "#]],
-    );
-}
-
-#[test]
-fn test_diamond_pkg_002() {
-    let dir = TestDir::new("diamond-pkg-002.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["check"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["build"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A0
-            A1
-            A2
-            A
-            B0
-            B1
-            B2
-            B
-            A0
-            A1
-            A2
-            A
-            C0
-            C1
-            C2
-            C
-            main
-        "#]],
-    );
-}
-
-#[test]
-fn test_diamond_pkg_003() {
-    let dir = TestDir::new("diamond-pkg-003.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["check"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["build"])
-        .assert()
-        .success();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A0
-            A1
-            A2
-            A
-            B0
-            B1
-            B2
-            B
-            A0
-            A1
-            A2
-            A
-            C0
-            C1
-            C2
-            C
-            main
-        "#]],
-    );
-}
-
-#[test]
-fn test_extra_flags() {
-    let dir = TestDir::new("extra_flags.in");
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc -g -no-builtin
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc -g -no-builtin
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc -no-builtin
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--debug", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc -g -O0 -source-map -g -no-builtin
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/debug/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/debug/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc -g -O0 -source-map -g -no-builtin
-            moonc link-core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main hello/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc -g -O0 -source-map -no-builtin
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["run", "main", "--dry-run", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc -g -no-builtin
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc -g -no-builtin
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc -no-builtin
-            moonrun ./target/wasm-gc/release/build/main/main.wasm
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["run", "main", "--dry-run", "--debug", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc -g -O0 -source-map -g -no-builtin
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/debug/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/debug/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc -g -O0 -source-map -g -no-builtin
-            moonc link-core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main hello/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc -g -O0 -source-map -no-builtin
-            moonrun ./target/wasm-gc/debug/build/main/main.wasm
-        "#]],
-    );
-}
-
-#[test]
-fn test_fancy_import() {
-    let dir = TestDir::new("fancy_import.in/import001");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-
-    let dir = TestDir::new("fancy_import.in/import002");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-
-    let dir = TestDir::new("fancy_import.in/import003");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-            Hello, world2!
-        "#]],
-    );
-
-    let dir = TestDir::new("fancy_import.in/import004");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            f1
-            f2
-            f3
-            f4
-        "#]],
-    );
-}
-
-#[test]
-fn test_hello() {
-    let dir = TestDir::new("hello.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-    check(
-        dir.join("target")
-            .join("common")
-            .join(".moon-lock")
-            .exists()
-            .to_string(),
-        expect!["false"],
-    );
-}
-
-#[test]
-fn test_moon_commands() {
-    let dir = TestDir::new("moon_commands.in");
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--nostd", "--sort-input"]),
-        expect![[r#"
-            moonc build-package ./lib/list/lib.mbt -o ./target/wasm-gc/release/build/lib/list/list.core -pkg design/lib/list -pkg-sources design/lib/list:./lib/list -target wasm-gc
-            moonc build-package ./lib/queue/lib.mbt -o ./target/wasm-gc/release/build/lib/queue/queue.core -pkg design/lib/queue -i ./target/wasm-gc/release/build/lib/list/list.mi:list -pkg-sources design/lib/queue:./lib/queue -target wasm-gc
-            moonc build-package ./main2/main.mbt -o ./target/wasm-gc/release/build/main2/main2.core -pkg design/main2 -is-main -i ./target/wasm-gc/release/build/lib/queue/queue.mi:queue -pkg-sources design/main2:./main2 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/list/list.core ./target/wasm-gc/release/build/lib/queue/queue.core ./target/wasm-gc/release/build/main2/main2.core -main design/main2 -o ./target/wasm-gc/release/build/main2/main2.wasm -pkg-config-path ./main2/moon.pkg.json -pkg-sources design/lib/list:./lib/list -pkg-sources design/lib/queue:./lib/queue -pkg-sources design/main2:./main2 -target wasm-gc
-            moonc build-package ./main1/main.mbt -o ./target/wasm-gc/release/build/main1/main1.core -pkg design/main1 -is-main -i ./target/wasm-gc/release/build/lib/queue/queue.mi:queue -pkg-sources design/main1:./main1 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/list/list.core ./target/wasm-gc/release/build/lib/queue/queue.core ./target/wasm-gc/release/build/main1/main1.core -main design/main1 -o ./target/wasm-gc/release/build/main1/main1.wasm -pkg-config-path ./main1/moon.pkg.json -pkg-sources design/lib/list:./lib/list -pkg-sources design/lib/queue:./lib/queue -pkg-sources design/main1:./main1 -target wasm-gc
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_run_main() {
-    let dir = TestDir::new("moon_new.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-}
-
-#[test]
-#[cfg(unix)]
-fn test_moon_new() {
-    let dir = TestDir::new_empty();
-    get_stdout(
-        &dir,
-        [
-            "new",
-            "--path",
-            "hello",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ],
-    );
-    check(
-        get_stdout(
-            &dir,
-            [
-                "run",
-                "--source-dir",
-                "./hello",
-                "--target-dir",
-                "./hello/target",
-                "src/main",
-            ],
-        ),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "run",
-                "--directory",
-                "./hello",
-                "--target-dir",
-                "./hello/target",
-                "src/main",
-            ],
-        ),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "run",
-                "-C",
-                "./hello",
-                "--target-dir",
-                "./hello/target",
-                "src/main",
-            ],
-        ),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_help() {
-    let dir = TestDir::new_empty();
-    check(
-        get_stdout(&dir, ["help"]).replace("moon.exe", "moon"),
-        expect![[r#"
-            The build system and package manager for MoonBit.
-
-            Usage: moon [OPTIONS] <COMMAND>
-
-            Commands:
-              new                    Create a new MoonBit module
-              build                  Build the current package
-              check                  Check the current package, but don't build object files
-              run                    Run a main package
-              test                   Test the current package
-              clean                  Remove the target directory
-              fmt                    Format source code
-              doc                    Generate documentation
-              info                   Generate public interface (`.mbti`) files for all packages in the module
-              add                    Add a dependency
-              remove                 Remove a dependency
-              install                Install dependencies
-              tree                   Display the dependency tree
-              login                  Log in to your account
-              register               Register an account at mooncakes.io
-              publish                Publish the current module
-              package                Package the current module
-              update                 Update the package registry index
-              coverage               Code coverage utilities
-              generate-build-matrix  Generate build matrix for benchmarking (legacy feature)
-              upgrade                Upgrade toolchains
-              shell-completion       Generate shell completion for bash/elvish/fish/pwsh/zsh to stdout
-              version                Print version information and exit
-              help                   Print this message or the help of the given subcommand(s)
-
-            Options:
-              -h, --help  Print help
-
-            Common Options:
-              -C, --directory <SOURCE_DIR>   The source code directory. Defaults to the current directory
-                  --target-dir <TARGET_DIR>  The target directory. Defaults to `source_dir/target`
-              -q, --quiet                    Suppress output
-              -v, --verbose                  Increase verbosity
-                  --trace                    Trace the execution of the program
-                  --dry-run                  Do not actually run the command
-                  --build-graph              Generate build graph
-        "#]],
-    );
-}
-
-#[test]
-#[ignore]
-#[cfg(unix)]
-fn test_bench4() {
-    let dir = TestDir::new_empty();
-    get_stdout(&dir, ["generate-build-matrix", "-n", "4", "-o", "bench4"]);
-    check(
-        get_stdout(
-            &dir,
-            [
-                "run",
-                "--source-dir",
-                "./bench4",
-                "--target-dir",
-                "./bench4/target",
-                "main",
-            ],
-        ),
-        expect![[r#"
-            ok
-        "#]],
-    );
-
-    get_stdout(
-        &dir,
-        [
-            "run",
-            "--source-dir",
-            "./bench4",
-            "--target-dir",
-            "./bench4/target",
-            "--trace",
-            "main",
-        ],
-    );
-
-    let trace_file = dunce::canonicalize(dir.join("./trace.json")).unwrap();
-    let t = std::fs::read_to_string(trace_file).unwrap();
-    assert!(t.contains("moonbit::build::read"));
-    assert!(t.contains(r#""name":"work.run""#));
-    assert!(t.contains(r#""name":"run""#));
-    assert!(t.contains(r#""name":"main""#));
-}
-
-#[test]
-fn test_moon_version() {
-    let dir = TestDir::new_empty();
-    let output = get_stdout(&dir, ["version"]);
-    let expected_moon_version = format!("moon {}", get_cargo_pkg_version());
-    assert!(output.contains(&expected_moon_version));
-
-    let output = get_stdout(&dir, ["version", "--all"]);
-    assert!(output.contains(&expected_moon_version));
-    assert!(output.contains("moonc"));
-    assert!(output.contains("moonrun"));
-
-    let output = get_stdout(&dir, ["version", "--all", "--no-path"]);
-    assert!(output.contains(&expected_moon_version));
-    assert!(output.contains("moonc"));
-    assert!(output.contains("moonrun"));
-}
-
-#[test]
-fn test_moon_version_json() -> anyhow::Result<()> {
-    let dir = TestDir::new_empty();
-
-    let output = get_stdout(&dir, ["version", "--json"]);
-    let items: moonutil::common::VersionItems = serde_json_lenient::from_str(&output)?;
-    assert_eq!(items.items.len(), 1);
-    assert_eq!(items.items[0].name, "moon");
-    assert!(items.items[0].version.contains(&get_cargo_pkg_version()));
-    assert!(items.items[0].path.is_some());
-
-    let output = get_stdout(&dir, ["version", "--all", "--json"]);
-    let items: moonutil::common::VersionItems = serde_json_lenient::from_str(&output)?;
-    assert_eq!(items.items.len(), 3);
-    assert_eq!(items.items[0].name, "moon");
-    assert!(items.items[0].version.contains(&get_cargo_pkg_version()));
-    assert_eq!(items.items[1].name, "moonc");
-
-    let output = get_stdout(&dir, ["version", "--all", "--json", "--no-path"]);
-    let items: moonutil::common::VersionItems = serde_json_lenient::from_str(&output)?;
-    assert!(items.items[0].path.is_none());
-
-    Ok(())
-}
-
-#[test]
-fn test_moon_new_exist() {
-    let dir = TestDir::new("moon_new_exist.in");
-    dir.join("hello").rm_rf();
-    let res = &get_stdout(
-        &dir,
-        [
-            "new",
-            "--path",
-            "hello",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ],
-    );
-
-    assert!(res.contains("Created hello"));
-    assert!(res.contains("Initialized empty Git repository"));
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(dir.join("hello"))
-        .args([
-            "new",
-            "--path",
-            ".",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ])
-        .assert()
-        .failure();
-
-    dir.join("hello").rm_rf();
-}
-
-#[test]
-fn test_moon_new_new() {
-    let dir = TestDir::new("moon_new_new.in");
-
-    let hello1 = dir.join("hello");
-    if hello1.exists() {
-        hello1.rm_rf()
-    }
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args([
-            "new",
-            "--path",
-            "hello",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ])
-        .assert()
-        .success();
-    check(
-        get_stdout(&hello1, ["run", "src/main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-    hello1.rm_rf();
-
-    let hello2 = dir.join("hello2");
-    std::fs::create_dir_all(&hello2).unwrap();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&hello2)
-        .args([
-            "new",
-            "--path",
-            ".",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ])
-        .assert()
-        .success();
-    check(
-        get_stdout(&hello2, ["run", "src/main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-    hello2.rm_rf();
-
-    let hello3 = dir.join("hello3");
-    if hello3.exists() {
-        hello3.rm_rf();
-    }
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args([
-            "new",
-            "--lib",
-            "--path",
-            "hello3",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ])
-        .assert()
-        .success();
-    check(
-        get_stdout(&hello3, ["test", "-v"]),
-        expect![[r#"
-            test moonbitlang/hello/lib/hello_test.mbt::hello ok
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-    check(
-        get_stdout(&hello3, ["test"]),
-        expect![[r#"
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-    hello3.rm_rf();
-
-    let hello4 = dir.join("hello4");
-    std::fs::create_dir_all(&hello4).unwrap();
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&hello4)
-        .args([
-            "new",
-            "--lib",
-            "--path",
-            ".",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ])
-        .assert()
-        .success();
-    check(
-        std::fs::read_to_string(hello4.join("src").join("moon.pkg.json")).unwrap(),
-        expect![[r#"
-            {
-              "import": [
-                "moonbitlang/hello/lib"
-              ]
-            }
-        "#]],
-    );
-    check(
-        get_stdout(&hello4, ["test", "-v"]),
-        expect![[r#"
-            test moonbitlang/hello/lib/hello_test.mbt::hello ok
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-    hello4.rm_rf();
-}
-
-#[test]
-#[ignore = "todo"]
-fn test_moon_new_interactive() {
-    let dir = TestDir::new("moon_new_new.in");
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["new"])
-        .stdin("hello5\nexec\nmoonbitlang\nhello5\n\n")
-        .assert()
-        .success();
-    check(
-        std::fs::read_to_string(dir.join("hello5").join("moon.mod.json")).unwrap(),
-        expect![[r#"
-            {
-              "name": "moonbitlang/hello5",
-              "version": "0.1.0",
-              "readme": "README.md",
-              "repository": "",
-              "license": "",
-              "keywords": [],
-              "description": ""
-            }"#]],
-    );
-    dir.join("hello5").rm_rf();
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["new"])
-        .stdin("hello6\nlib\nmoonbitlang\nhello6\n")
-        .assert()
-        .success();
-    check(
-        std::fs::read_to_string(dir.join("hello6").join("moon.pkg.json")).unwrap(),
-        expect![[r#"
-            {
-              "import": [
-                "moonbitlang/hello6/lib"
-              ]
-            }
-        "#]],
-    );
-    dir.join("hello6").rm_rf();
-}
-
-#[test]
-fn test_moon_new_snapshot() {
-    let dir = TestDir::new("moon_new_snapshot.in");
-
-    let hello = dir.join("hello");
-    if hello.exists() {
-        hello.rm_rf();
-    }
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["new", "hello", "--no-license"])
-        .assert()
-        .success();
-    check(
-        read(hello.join("src").join("lib").join("hello.mbt")),
-        expect![[r#"
-            pub fn hello() -> String {
-              "Hello, world!"
-            }
-        "#]],
-    );
-    assert!(!hello.join("LICENSE").exists());
-
-    if hello.exists() {
-        hello.rm_rf();
-    }
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args([
-            "new",
-            "--path",
-            "hello",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-        ])
-        .assert()
-        .success();
-    check(
-        read(hello.join("src").join("lib").join("hello.mbt")),
-        expect![[r#"
-            pub fn hello() -> String {
-              "Hello, world!"
-            }
-        "#]],
-    );
-    check(
-        read(hello.join("src").join("lib").join("hello_test.mbt")),
-        expect![[r#"
-            test "hello" {
-              if @lib.hello() != "Hello, world!" {
-                fail!("@lib.hello() != \"Hello, world!\"")
-              }
-            }
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(hello.join("src").join("lib").join("moon.pkg.json")).unwrap(),
-        expect!["{}"],
-    );
-    check(
-        read(hello.join("src").join("main").join("main.mbt")),
-        expect![[r#"
-            fn main {
-              println(@lib.hello())
-            }
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(hello.join("src").join("main").join("moon.pkg.json")).unwrap(),
-        expect![[r#"
-            {
-              "is-main": true,
-              "import": [
-                "moonbitlang/hello/lib"
-              ]
-            }"#]],
-    );
-    check(
-        std::fs::read_to_string(hello.join("moon.mod.json")).unwrap(),
-        expect![[r#"
-            {
-              "name": "moonbitlang/hello",
-              "version": "0.1.0",
-              "readme": "README.md",
-              "repository": "",
-              "license": "Apache-2.0",
-              "keywords": [],
-              "description": "",
-              "source": "src"
-            }"#]],
-    );
-    let license_content = std::fs::read_to_string(hello.join("LICENSE")).unwrap();
-    assert!(license_content.contains("Apache License"));
-    assert!(license_content.contains("Version 2.0, January 2004"));
-    hello.rm_rf();
-}
-
-#[test]
-fn test_moon_new_snapshot_lib() {
-    let dir = TestDir::new("moon_new_snapshot.in");
-
-    let hello = dir.join("hello_lib");
-
-    if hello.exists() {
-        hello.rm_rf()
-    }
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["new", "--lib", "hello_lib"])
-        .assert()
-        .success();
-
-    let license_content = std::fs::read_to_string(hello.join("LICENSE")).unwrap();
-    assert!(license_content.contains("Apache License"));
-    assert!(license_content.contains("Version 2.0, January 2004"));
-    hello.rm_rf();
-}
-
-#[test]
-fn test_moon_new_snapshot_lib_no_license() {
-    let dir = TestDir::new("moon_new_snapshot.in");
-
-    let hello = dir.join("hello_lib");
-
-    if hello.exists() {
-        hello.rm_rf()
-    }
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["new", "--lib", "hello_lib", "--no-license"])
-        .assert()
-        .success();
-    check(
-        read(hello.join("src").join("lib").join("hello.mbt")),
-        expect![[r#"
-            pub fn hello() -> String {
-              "Hello, world!"
-            }
-        "#]],
-    );
-
-    if hello.exists() {
-        hello.rm_rf()
-    }
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args([
-            "new",
-            "--lib",
-            "--path",
-            "hello_lib",
-            "--user",
-            "moonbitlang",
-            "--name",
-            "hello",
-            "--no-license",
-        ])
-        .assert()
-        .success();
-    check(
-        read(hello.join("src").join("lib").join("hello.mbt")),
-        expect![[r#"
-            pub fn hello() -> String {
-              "Hello, world!"
-            }
-        "#]],
-    );
-    check(
-        read(hello.join("src").join("lib").join("hello_test.mbt")),
-        expect![[r#"
-            test "hello" {
-              if @lib.hello() != "Hello, world!" {
-                fail!("@lib.hello() != \"Hello, world!\"")
-              }
-            }
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(hello.join("src").join("lib").join("moon.pkg.json")).unwrap(),
-        expect!["{}"],
-    );
-    check(
-        std::fs::read_to_string(hello.join("src").join("moon.pkg.json")).unwrap(),
-        expect![[r#"
-            {
-              "import": [
-                "moonbitlang/hello/lib"
-              ]
-            }
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(hello.join("moon.mod.json")).unwrap(),
-        expect![[r#"
-            {
-              "name": "moonbitlang/hello",
-              "version": "0.1.0",
-              "readme": "README.md",
-              "repository": "",
-              "license": "",
-              "keywords": [],
-              "description": "",
-              "source": "src"
-            }"#]],
-    );
-    check(
-        read(hello.join("src").join("top.mbt")),
-        expect![[r#"
-            pub fn greeting() -> Unit {
-              println(@lib.hello())
-            }
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(hello.join("README.md")).unwrap(),
-        expect!["# moonbitlang/hello"],
-    );
-    hello.rm_rf();
-}
-
-#[test]
-fn test_moon_test() {
-    let dir = TestDir::new("moon_test.in");
-
-    let out = snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["test", "--sort-input", "--no-parallelize"])
-        .assert()
-        .failure()
-        .get_output()
-        .stdout
-        .to_owned();
-
-    let s = std::str::from_utf8(&out).unwrap().to_string();
-
-    check(
-        &s,
-        expect![[r#"
-            test moontest/lib2/hello_wbtest.mbt::0 failed: hello() != "Hello, World"
-            test moontest/lib2/nested/lib_wbtest.mbt::0 failed: add1(1) should be 2
-            Total tests: 10, passed: 8, failed: 2.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_filter_package() {
-    let dir = TestDir::new("test_filter.in");
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/A",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            test A
-            test B
-            test C
-            test D
-            test hello_0
-            test hello_1
-            test hello_2
-            Total tests: 7, passed: 7, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            test A
-            test hello_0
-            test hello_1
-            Total tests: 3, passed: 3, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_filter_multi_package() {
-    let dir = TestDir::new("test_filter_pkg_with_test_imports.in");
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib",
-                "username/hello/lib1",
-                "username/hello/lib2",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib1
-
-            Hello from lib2
-
-            Hello from lib7
-            Hello from lib3
-
-            Hello from lib4
-            Total tests: 4, passed: 4, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib",
-                "username/hello/lib1",
-                "username/hello/lib2",
-                "-p",
-                "username/hello/lib3",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib1
-
-            Hello from lib2
-
-            Hello from lib7
-            Hello from lib3
-
-            Hello from lib4
-            Hello from lib3
-
-            Hello from lib7
-            Hello from lib6
-            Total tests: 7, passed: 7, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib",
-                "username/hello/lib1",
-                "username/hello/lib2",
-                "-f",
-                "lib.mbt",
-                "-p",
-                "username/hello/lib3",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib1
-
-            Hello from lib2
-
-            Hello from lib3
-
-            Hello from lib4
-            Hello from lib3
-
-            Hello from lib7
-            Total tests: 5, passed: 5, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib",
-                "username/hello/lib1",
-                "username/hello/lib2",
-                "-f",
-                "lib.mbt",
-                "-p",
-                "username/hello/lib3",
-                "-i",
-                "0",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib1
-
-            Hello from lib2
-
-            Hello from lib3
-
-            Hello from lib4
-            Hello from lib3
-
-            Total tests: 4, passed: 4, failed: 0.
-        "#]],
-    );
-}
-#[test]
-fn test_moon_test_filter_package_with_deps() {
-    let dir = TestDir::new("test_filter_pkg_with_deps.in");
-
-    check(
-        get_stdout(
-            &dir,
-            ["test", "-p", "username/hello/lib", "--no-parallelize"],
-        ),
-        expect![[r#"
-            Hello from lib1
-            Hello from lib2
-            Hello from lib4
-
-            Hello from lib3
-            Hello from lib4
-
-
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            ["test", "-p", "username/hello/lib2", "--no-parallelize"],
-        ),
-        expect![[r#"
-            Hello from lib2
-            Hello from lib4
-
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            ["test", "-p", "username/hello/lib4", "--no-parallelize"],
-        ),
-        expect![[r#"
-            Hello from lib4
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_filter_package_with_test_imports() {
-    let dir = TestDir::new("test_filter_pkg_with_test_imports.in");
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib1
-
-            Hello from lib2
-
-            Hello from lib7
-            Total tests: 2, passed: 2, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib1",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib3
-
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib2",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib4
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib3",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib3
-
-            Hello from lib7
-            Hello from lib6
-            Total tests: 3, passed: 3, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib4",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib5
-            Hello from lib5
-            Hello from lib7
-            Total tests: 3, passed: 3, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib5",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib5
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib6",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib6
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib7",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib7
-            Hello from lib6
-            Total tests: 2, passed: 2, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_parallelism() {
-    let dir = TestDir::new("test_filter_pkg_with_test_imports.in");
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib1
-
-            Hello from lib2
-
-            Hello from lib7
-            Total tests: 2, passed: 2, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib1",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib3
-
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib2",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib4
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib3",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib3
-
-            Hello from lib7
-            Hello from lib6
-            Total tests: 3, passed: 3, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib4",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib5
-            Hello from lib5
-            Hello from lib7
-            Total tests: 3, passed: 3, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib5",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib5
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib6",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib6
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-j1",
-                "-p",
-                "username/hello/lib7",
-                "--sort-input",
-                "--no-parallelize",
-            ],
-        ),
-        expect![[r#"
-            Hello from lib7
-            Hello from lib6
-            Total tests: 2, passed: 2, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_filter_package_dry_run() {
-    let dir = TestDir::new("test_filter.in");
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/A",
-                "--dry-run",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./A/hello.mbt ./A/test.mbt ./A/hello_wbtest.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/A/A.whitebox_test.core -pkg username/hello/A -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/A/A.whitebox_test.core -main username/hello/A -o ./target/wasm-gc/debug/test/A/A.whitebox_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/A:./A -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./A/hello.mbt ./A/test.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/A/A.internal_test.core -pkg username/hello/A -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/A/A.internal_test.core -main username/hello/A -o ./target/wasm-gc/debug/test/A/A.internal_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/A:./A -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib2 --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib2/lib.mbt ./target/wasm-gc/debug/test/lib2/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib2/lib2.internal_test.core -pkg username/hello/lib2 -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib2:./lib2 -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib2/lib2.internal_test.core -main username/hello/lib2 -o ./target/wasm-gc/debug/test/lib2/lib2.internal_test.wasm -test-mode -pkg-config-path ./lib2/moon.pkg.json -pkg-sources username/hello/lib2:./lib2 -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./A/hello.mbt ./A/test.mbt ./A/hello_wbtest.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/A/A.whitebox_test.core -pkg username/hello/A -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/A/A.whitebox_test.core -main username/hello/A -o ./target/wasm-gc/debug/test/A/A.whitebox_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/A:./A -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./A/hello.mbt ./A/test.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/A/A.internal_test.core -pkg username/hello/A -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/A/A.internal_test.core -main username/hello/A -o ./target/wasm-gc/debug/test/A/A.internal_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/A:./A -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_filter_file() {
-    let dir = TestDir::new("test_filter.in");
-
-    check(
-        get_stdout(&dir, ["test", "-p", "username/hello/A", "-f", "hello.mbt"]),
-        expect![[r#"
-            test A
-            test B
-            Total tests: 2, passed: 2, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            ["test", "-p", "username/hello/lib", "-f", "hello_wbtest.mbt"],
-        ),
-        expect![[r#"
-            test hello_0
-            test hello_1
-            Total tests: 2, passed: 2, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_filter_index() {
-    let dir = TestDir::new("test_filter.in");
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/A",
-                "-f",
-                "hello.mbt",
-                "-i",
-                "1",
-            ],
-        ),
-        expect![[r#"
-            test B
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "-p",
-                "username/hello/lib",
-                "-f",
-                "hello_wbtest.mbt",
-                "-i",
-                "0",
-            ],
-        ),
-        expect![[r#"
-            test hello_0
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_filter_index_with_auto_update() {
-    let dir = TestDir::new("test_filter.in");
-
-    let _ = get_stdout(
-        &dir,
-        [
-            "test",
-            "-p",
-            "username/hello/lib2",
-            "-f",
-            "lib.mbt",
-            "-i",
-            "1",
-            "-u",
-            "--no-parallelize",
-        ],
-    );
-    check(
-        read(dir.join("lib2").join("lib.mbt")),
-        expect![[r#"
-            test {
-              println(2)
-            }
-
-            test {
-              inspect!(1, content="1")
-              inspect!(1 + 2, content="3")
-              inspect!("hello", content="hello")
-              inspect!([1, 2, 3], content="[1, 2, 3]")
-            }
-
-            test {
-              inspect!(2)
-            }
-        "#]],
-    );
-
-    let dir = TestDir::new("test_filter.in");
-    let _ = get_err_stderr(
-        &dir,
-        [
-            "test",
-            "-p",
-            "username/hello/lib2",
-            "-f",
-            "lib.mbt",
-            "-i",
-            "1",
-            "-u",
-            "-l",
-            "2",
-            "--no-parallelize",
-        ],
-    );
-    check(
-        read(dir.join("lib2").join("lib.mbt")),
-        expect![[r#"
-            test {
-              println(2)
-            }
-
-            test {
-              inspect!(1, content="1")
-              inspect!(1 + 2, content="3")
-              inspect!("hello")
-              inspect!([1, 2, 3])
-            }
-
-            test {
-              inspect!(2)
-            }
-        "#]],
-    );
-
-    let dir = TestDir::new("test_filter.in");
-    let _ = get_err_stderr(
-        &dir,
-        [
-            "test",
-            "-p",
-            "username/hello/lib2",
-            "-f",
-            "lib.mbt",
-            "-u",
-            "-l",
-            "1",
-            "--no-parallelize",
-        ],
-    );
-    check(
-        read(dir.join("lib2").join("lib.mbt")),
-        expect![[r#"
-            test {
-              println(2)
-            }
-
-            test {
-              inspect!(1, content="1")
-              inspect!(1 + 2)
-              inspect!("hello")
-              inspect!([1, 2, 3])
-            }
-
-            test {
-              inspect!(2, content="2")
-            }
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_succ() {
-    std::env::set_var("NO_COLOR", "1");
-    let dir = TestDir::new("moon_test_succ.in");
-    check(
-        get_stdout(&dir, ["test", "-v", "--sort-input", "--no-parallelize"]),
-        expect![[r#"
-            test moontest/lib/hello_wbtest.mbt::0 ok
-            test moontest/lib2/hello_wbtest.mbt::0 ok
-            test moontest/lib2/nested/lib_wbtest.mbt::0 ok
-            test moontest/lib2/nested/lib_wbtest.mbt::1 ok
-            test moontest/lib3/hello_wbtest.mbt::0 ok
-            test moontest/lib4/hello_wbtest.mbt::0 ok
-            Total tests: 6, passed: 6, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_hello_exec() {
-    let dir = TestDir::new("moon_test_hello_exec.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["test", "-v"]),
-        expect![[r#"
-            this is lib test
-            test moonbitlang/hello/lib/hello_wbtest.mbt::0 ok
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["test", "--dry-run", "--debug", "--sort-input"]),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target wasm-gc -g -O0 -source-map -whitebox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_hello_exec_fntest() {
-    let dir = TestDir::new("moon_test_hello_exec_fntest.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            init in main/main.mbt
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["test", "-v", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["test", "-v", "--sort-input", "--no-parallelize"]),
-        expect![[r#"
-            test in lib/hello.mbt
-            test moonbitlang/hello/lib/hello.mbt::0 ok
-            test in lib/hello_test.mbt
-            test moonbitlang/hello/lib/hello_wbtest.mbt::0 ok
-            Total tests: 2, passed: 2, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_hello_lib() {
-    let dir = TestDir::new("moon_test_hello_lib.in");
-    check(
-        get_stdout(&dir, ["test", "-v"]),
-        expect![[r#"
-            test moonbitlang/hello/lib/hello_wbtest.mbt::0 ok
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_with_local_dep() {
-    let dir = TestDir::new("moon_test_with_local_dep.in");
-    check(
-        get_stdout(&dir, ["test", "-v", "--frozen"]),
-        expect![[r#"
-            test hello31/lib/hello_wbtest.mbt::0 ok
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["run", "main", "--frozen"]),
-        expect![[r#"
-            hello from mooncake
-            hello from mooncake2
-        "#]],
-    );
-    // Run moon info
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["info", "--frozen"])
-        .assert()
-        .success();
-    // Check directory structure by listing all files
-    let root_dir = dir.as_ref().to_owned();
-    let dir = WalkDir::new(&dir)
-        .sort_by_file_name()
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .map(|e| e.path().strip_prefix(&root_dir).unwrap().to_owned())
-        // Filter out target directory
-        .filter(|p| !p.starts_with("target"))
-        // Convert to string and join with newline
-        .map(|p| p.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-    let joined = dir.join("\n").replace('\\', "/"); // Normalize path separator
-    check(
-        &joined,
-        expect![[r#"
-
-            .gitignore
-            lib
-            lib/hello.mbt
-            lib/hello_wbtest.mbt
-            lib/lib.mbti
-            lib/moon.pkg.json
-            main
-            main/main.mbt
-            main/main.mbti
-            main/moon.pkg.json
-            mods
-            mods/lijunchen
-            mods/lijunchen/mooncake
-            mods/lijunchen/mooncake/lib
-            mods/lijunchen/mooncake/lib/hello.mbt
-            mods/lijunchen/mooncake/lib/hello_wbtest.mbt
-            mods/lijunchen/mooncake/lib/moon.pkg.json
-            mods/lijunchen/mooncake/moon.mod.json
-            mods/lijunchen/mooncake/moon.pkg.json
-            mods/lijunchen/mooncake/top.mbt
-            mods/lijunchen/mooncake2
-            mods/lijunchen/mooncake2/moon.mod.json
-            mods/lijunchen/mooncake2/src
-            mods/lijunchen/mooncake2/src/lib
-            mods/lijunchen/mooncake2/src/lib/hello.mbt
-            mods/lijunchen/mooncake2/src/lib/hello_wbtest.mbt
-            mods/lijunchen/mooncake2/src/lib/moon.pkg.json
-            mods/lijunchen/mooncake2/src/moon.pkg.json
-            mods/lijunchen/mooncake2/src/top.mbt
-            moon.mod.json"#]],
-    );
-}
-
-#[test]
-fn test_pkg_source_in() {
-    let dir = TestDir::new("moon_test_with_local_dep.in");
-    let out = get_stdout(&dir, ["build", "--dry-run", "--sort-input", "--frozen"]);
-    check(
-        &out,
-        expect![[r#"
-            moonc build-package ./mods/lijunchen/mooncake/lib/hello.mbt -o ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake/lib/lib.core -pkg lijunchen/mooncake/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources lijunchen/mooncake/lib:./mods/lijunchen/mooncake/lib -target wasm-gc
-            moonc build-package ./mods/lijunchen/mooncake2/src/lib/hello.mbt -o ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake2/lib/lib.core -pkg lijunchen/mooncake2/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources lijunchen/mooncake2/lib:./mods/lijunchen/mooncake2/src/lib -target wasm-gc
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello31/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources hello31/lib:./lib -target wasm-gc
-            moonc build-package ./mods/lijunchen/mooncake/top.mbt -o ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake/mooncake.core -pkg lijunchen/mooncake -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake/lib/lib.mi:lib -pkg-sources lijunchen/mooncake:./mods/lijunchen/mooncake -target wasm-gc
-            moonc build-package ./mods/lijunchen/mooncake2/src/top.mbt -o ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake2/mooncake2.core -pkg lijunchen/mooncake2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake2/lib/lib.mi:lib -pkg-sources lijunchen/mooncake2:./mods/lijunchen/mooncake2/src -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello31/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -i ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake/mooncake.mi:mooncake -i ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake2/mooncake2.mi:mooncake2 -pkg-sources hello31/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake/lib/lib.core ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake/mooncake.core ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake2/lib/lib.core ./target/wasm-gc/release/build/.mooncakes/lijunchen/mooncake2/mooncake2.core ./target/wasm-gc/release/build/main/main.core -main hello31/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello31/lib:./lib -pkg-sources lijunchen/mooncake/lib:./mods/lijunchen/mooncake/lib -pkg-sources lijunchen/mooncake:./mods/lijunchen/mooncake -pkg-sources lijunchen/mooncake2/lib:./mods/lijunchen/mooncake2/src/lib -pkg-sources lijunchen/mooncake2:./mods/lijunchen/mooncake2/src -pkg-sources hello31/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
-        "#]],
-    );
-    assert!(out.contains("lijunchen/mooncake:./mods/lijunchen/mooncake"));
-    assert!(out.contains("lijunchen/mooncake2:./mods/lijunchen/mooncake2/src"));
-}
-
-#[test]
-fn test_output_format() {
-    let dir = TestDir::new("output-format.in");
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["build", "-q"])
-        .assert()
-        .success();
-    assert!(dir
-        .join(format!(
-            "target/{}/release/build/main/main.wasm",
-            TargetBackend::default().to_backend_ext()
-        ))
-        .exists());
-    assert!(!dir
-        .join(format!(
-            "target/{}/release/build/main/main.wat",
-            TargetBackend::default().to_backend_ext()
-        ))
-        .exists());
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["build", "-q", "--output-wat"])
-        .assert()
-        .success();
-    assert!(dir
-        .join(format!(
-            "target/{}/release/build/main/main.wat",
-            TargetBackend::default().to_backend_ext()
-        ))
-        .exists());
-    assert!(!dir
-        .join(format!(
-            "target/{}/release/build/main/main.wasm",
-            TargetBackend::default().to_backend_ext()
-        ))
-        .exists());
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["run", "main"])
-        .assert()
-        .success();
-    assert!(!dir
-        .join(format!(
-            "target/{}/release/build/main/main.wat",
-            TargetBackend::default().to_backend_ext()
-        ))
-        .exists());
-    assert!(dir
-        .join(format!(
-            "target/{}/release/build/main/main.wasm",
-            TargetBackend::default().to_backend_ext()
-        ))
-        .exists());
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["run", "main", "--output-wat"])
-        .assert()
-        .failure();
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["clean"])
-        .assert()
-        .success();
-}
-
-#[test]
-fn test_simple_pkg() {
-    let dir = TestDir::new("simple-pkg-A-001.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-A-002.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-A-003.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-A-004.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-A-005.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-A-006.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-AB-001.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            B
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-AB-002.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            B
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-AB-003.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            B
-            main
-        "#]],
-    );
-
-    let dir = TestDir::new("simple-pkg-AB-004.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            A
-            B
-            main
-        "#]],
-    );
-}
-
-#[test]
-fn test_target_backend() {
-    let dir = TestDir::new("target-backend.in");
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["build", "--dry-run", "--target", "wasm-gc", "--nostd"],
-        ),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--target", "js", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/js/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target js
-            moonc build-package ./main/main.mbt -o ./target/js/release/build/main/main.core -pkg hello/main -is-main -i ./target/js/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target js
-            moonc link-core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main hello/main -o ./target/js/release/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target js
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["run", "main", "--dry-run", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc
-            moonrun ./target/wasm-gc/release/build/main/main.wasm
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["run", "main", "--dry-run", "--target", "wasm-gc", "--nostd"],
-        ),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target wasm-gc
-            moonrun ./target/wasm-gc/release/build/main/main.wasm
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["run", "main", "--dry-run", "--target", "js", "--nostd"],
-        ),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/js/release/build/lib/lib.core -pkg hello/lib -pkg-sources hello/lib:./lib -target js
-            moonc build-package ./main/main.mbt -o ./target/js/release/build/main/main.core -pkg hello/main -is-main -i ./target/js/release/build/lib/lib.mi:lib -pkg-sources hello/main:./main -target js
-            moonc link-core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main hello/main -o ./target/js/release/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/lib:./lib -pkg-sources hello/main:./main -target js
-            node ./target/js/release/build/main/main.js
-        "#]],
-    );
-}
-
-#[test]
-fn test_test_error_report() {
-    let dir = TestDir::new("test_error_report.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["test"])
-        .assert()
-        .failure();
-}
-
-#[test]
-fn test_moonbit_docs_example() {
-    let dir = TestDir::new("unicode_demo.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            3
-        "#]],
-    );
-
-    let dir = TestDir::new("palindrome_string.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-        aba
-    "#]],
-    );
-
-    let dir = TestDir::new("avl_tree.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            height of the tree: 6
-                    0
-                  1
-                    2
-                3
-                    4
-                  5
-                    6
-              7
-                    8
-                  9
-                    10
-                11
-                    12
-                  13
-                    14
-            15
-                    16
-                  17
-                    18
-                19
-                    20
-                  21
-                    22
-              23
-                  24
-                25
-                    26
-                  27
-                    28
-                      29
-            success
-        "#]],
-    );
-
-    let dir = TestDir::new("docstring-demo.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-
-    let dir = TestDir::new("multidimensional_arrays.in");
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-        11
-    "#]],
-    );
-}
-
-#[test]
-fn test_moon_inline_test_001() {
-    let dir = TestDir::new("moon_inline_test_001.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["test"])
-        .assert()
-        .success();
-
-    let dir = TestDir::new("moon_inline_test_002.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["test"])
-        .assert()
-        .success();
-    let dir = TestDir::new("moon_inline_test_003.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["test"])
-        .assert()
-        .failure();
-}
-
-#[test]
-fn test_moon_inline_test_004() {
-    let dir = TestDir::new("moon_inline_test_004.in");
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["test"])
-        .assert()
-        .failure();
-}
-
-#[test]
-fn test_moon_inline_test_order() {
-    let dir = TestDir::new("moon_inline_test_order.in");
-    check(
-        get_stdout(&dir, ["test", "-v", "--sort-input", "--no-parallelize"]),
-        expect![[r#"
-            executing A
-            executing A::hello.mbt::test_A
-            test username/hello/A/hello.mbt::0 ok
-            test username/hello/A/hello.mbt::1 ok
-            A_test.mbt::init
-            A_test.mbt::test_hello_A
-            test username/hello/A/A_wbtest.mbt::0 ok
-            test username/hello/A/A_wbtest.mbt::1 ok
-            executing B
-            executing B::hello.mbt::test_B
-            test username/hello/B/hello.mbt::0 ok
-            test username/hello/B/hello.mbt::1 ok
-            B_test.mbt::init
-            B_test.mbt::test_hello_B
-            test username/hello/B/B_wbtest.mbt::0 ok
-            test username/hello/B/B_wbtest.mbt::1 ok
-            Total tests: 8, passed: 8, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["run", "main", "--sort-input"]),
-        expect![[r#"
-            main.mbt::init
-        "#]],
-    );
-}
-
-#[test]
-fn test_empty_name() {
-    let dir = TestDir::new("empty_name.in");
-    check(
-        get_err_stderr(&dir, ["check"]),
-        expect![[r#"
-            error: failed to load `$ROOT/moon.mod.json`
-
-            Caused by:
-                0: `name` bad format
-                1: `name` should not be empty
-        "#]],
-    );
-}
-
-#[test]
-fn test_error_duplicate_alias() {
-    let dir = TestDir::new("error_duplicate_alias.in");
-    let out = get_err_stderr(&dir, ["check"]);
-    assert!(out.contains("Duplicate alias `lib`"));
-}
-
-#[test]
-fn test_core_order() {
-    let dir = TestDir::new("core_order.in");
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--nostd"]),
-        expect![[r#"
-            moonc build-package ./T/t.mbt -o ./target/wasm-gc/release/build/T/T.core -pkg lijunchen/hello/T -pkg-sources lijunchen/hello/T:./T -target wasm-gc
-            moonc build-package ./A/a.mbt -o ./target/wasm-gc/release/build/A/A.core -pkg lijunchen/hello/A -i ./target/wasm-gc/release/build/T/T.mi:T -pkg-sources lijunchen/hello/A:./A -target wasm-gc
-            moonc build-package ./B/b.mbt -o ./target/wasm-gc/release/build/B/B.core -pkg lijunchen/hello/B -i ./target/wasm-gc/release/build/T/T.mi:T -pkg-sources lijunchen/hello/B:./B -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg lijunchen/hello/main -is-main -i ./target/wasm-gc/release/build/A/A.mi:A -i ./target/wasm-gc/release/build/B/B.mi:B -pkg-sources lijunchen/hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/T/T.core ./target/wasm-gc/release/build/A/A.core ./target/wasm-gc/release/build/B/B.core ./target/wasm-gc/release/build/main/main.core -main lijunchen/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources lijunchen/hello/T:./T -pkg-sources lijunchen/hello/A:./A -pkg-sources lijunchen/hello/B:./B -pkg-sources lijunchen/hello/main:./main -target wasm-gc
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_bundle() {
-    let dir = TestDir::new("moon_bundle.in");
-    check(
-        get_stdout(&dir, ["bundle", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc build-package ./A/lib.mbt -o ./target/wasm-gc/release/bundle/A/A.core -pkg moonbitlang/core/A -pkg-sources moonbitlang/core/A:./A -target wasm-gc
-            moonc build-package ./B/lib.mbt -o ./target/wasm-gc/release/bundle/B/B.core -pkg moonbitlang/core/B -i ./target/wasm-gc/release/bundle/A/A.mi:A -pkg-sources moonbitlang/core/B:./B -target wasm-gc
-            moonc build-package ./C/lib.mbt -o ./target/wasm-gc/release/bundle/C/C.core -pkg moonbitlang/core/C -i ./target/wasm-gc/release/bundle/A/A.mi:A -pkg-sources moonbitlang/core/C:./C -target wasm-gc
-            moonc build-package ./Orphan/lib.mbt -o ./target/wasm-gc/release/bundle/Orphan/Orphan.core -pkg moonbitlang/core/Orphan -pkg-sources moonbitlang/core/Orphan:./Orphan -target wasm-gc
-            moonc bundle-core ./target/wasm-gc/release/bundle/A/A.core ./target/wasm-gc/release/bundle/B/B.core ./target/wasm-gc/release/bundle/C/C.core ./target/wasm-gc/release/bundle/Orphan/Orphan.core -o ./target/wasm-gc/release/bundle/core.core
-        "#]],
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn test_expect_test() -> anyhow::Result<()> {
-    let tmp_dir_path = TestDir::new("expect_test.in");
-
-    let s = snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&tmp_dir_path)
-        .args(["test", "--update", "--no-parallelize"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .to_owned();
-    let out = std::str::from_utf8(&s).unwrap().to_string();
-
-    assert!(out.contains("Auto updating expect tests and retesting ..."));
-    assert!(out.contains("Total tests: 30, passed: 30, failed: 0."));
-    let updated =
-        std::fs::read_to_string(tmp_dir_path.as_ref().join("lib").join("hello.mbt")).unwrap();
-    assert!(updated.contains(r#"["a", "b", "c"]"#));
-
-    let s = snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&tmp_dir_path)
-        .args(["test", "--update", "--no-parallelize"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .to_owned();
-
-    let out = std::str::from_utf8(&s).unwrap().to_string();
-    assert!(out.contains("Total tests: 30, passed: 30, failed: 0."));
-    let out = std::fs::read_to_string(tmp_dir_path.as_ref().join("lib").join("hello_wbtest.mbt"))
-        .unwrap();
-    assert!(out.contains(r#"inspect!(notbuf, content="haha")"#));
-    Ok(())
-}
-
-#[test]
-fn test_only_update_expect() {
-    let tmp_dir_path = TestDir::new("only_update_expect.in");
-
-    let _ = snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&tmp_dir_path)
-        .args([
-            "test",
-            "-p",
-            "username/hello/lib",
-            "-f",
-            "hello.mbt",
-            "-i",
-            "0",
-            "--update",
-        ])
-        .assert()
-        .failure()
-        .get_output()
-        .stdout
-        .to_owned();
-}
+mod backend;
+mod backend_config;
+mod design;
+mod diamond_pkg;
+mod docs_examples;
+mod dummy_core;
+mod extra_flags;
+mod fancy_import;
+mod fmt;
+mod hello;
+mod inline_test;
+mod mbti;
+mod moon_bench;
+mod moon_bundle;
+mod moon_commands;
+mod moon_new;
+mod moon_test;
+mod moon_version;
+mod output_format;
+mod packages;
+mod prebuild;
+mod prebuild_config_script;
+mod simple_pkg;
+mod target_backend;
+mod targets;
+mod test_error_report;
+mod test_expect_test;
+mod test_filter;
+mod warns;
 
 #[test]
 fn test_need_link() {
@@ -2487,1497 +74,8 @@ fn test_need_link() {
 }
 
 #[test]
-fn test_backend_config() {
-    let dir = TestDir::new("backend_config.in");
-
-    let _ = get_stdout(&dir, ["build", "--output-wat"]);
-    let out = std::fs::read_to_string(dir.join(format!(
-        "target/{}/release/build/lib/lib.wat",
-        TargetBackend::default().to_backend_ext()
-    )))
-    .unwrap();
-    assert!(out.contains(&format!(
-        "export \"hello_{}\"",
-        TargetBackend::default().to_backend_ext().replace('-', "_")
-    )));
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core -main username/hello/lib -o ./target/wasm-gc/release/build/lib/lib.wasm -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -exported_functions=hello:hello_wasm_gc
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--dry-run",
-                "--nostd",
-                "--target",
-                "wasm-gc",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/lib/lib.core -main username/hello/lib -o ./target/wasm-gc/release/build/lib/lib.wasm -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -target wasm-gc -exported_functions=hello:hello_wasm_gc
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--dry-run",
-                "--nostd",
-                "--target",
-                "js",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/js/release/build/lib/lib.core -pkg username/hello/lib -pkg-sources username/hello/lib:./lib -target js
-            moonc build-package ./main/main.mbt -o ./target/js/release/build/main/main.core -pkg username/hello/main -is-main -i ./target/js/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target js
-            moonc link-core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main username/hello/main -o ./target/js/release/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -target js
-            moonc link-core ./target/js/release/build/lib/lib.core -main username/hello/lib -o ./target/js/release/build/lib/lib.js -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -target js -exported_functions=hello:hello_js -js-format esm
-        "#]],
-    );
-}
-
-#[test]
-#[cfg(unix)]
-fn test_mbti() {
-    let dir = TestDir::new("mbti.in");
-    let _ = get_stdout(&dir, ["info"]);
-    let lib_mi_out = &std::fs::read_to_string(dir.join("lib").join("lib.mbti")).unwrap();
-    expect![[r#"
-        package username/hello/lib
-
-        alias @moonbitlang/core/immut/list as @list
-
-        // Values
-        fn hello() -> String
-
-        let hello_list : @list.T[String]
-
-        // Types and methods
-
-        // Type aliases
-
-        // Traits
-
-    "#]]
-    .assert_eq(lib_mi_out);
-
-    let main_mi_out = &std::fs::read_to_string(dir.join("main").join("main.mbti")).unwrap();
-    expect![[r#"
-        package username/hello/main
-
-        // Values
-
-        // Types and methods
-
-        // Type aliases
-
-        // Traits
-
-    "#]]
-    .assert_eq(main_mi_out);
-}
-
-#[test]
-#[cfg(unix)]
-fn test_mbti_no_alias() {
-    let dir = TestDir::new("mbti.in");
-    let _ = get_stdout(&dir, ["info", "--no-alias"]);
-    let lib_mi_out = &std::fs::read_to_string(dir.join("lib").join("lib.mbti")).unwrap();
-    expect![[r#"
-        package username/hello/lib
-
-        // Values
-        fn hello() -> String
-
-        let hello_list : @moonbitlang/core/immut/list.T[String]
-
-        // Types and methods
-
-        // Type aliases
-
-        // Traits
-
-    "#]]
-    .assert_eq(lib_mi_out);
-
-    let main_mi_out = &std::fs::read_to_string(dir.join("main").join("main.mbti")).unwrap();
-    expect![[r#"
-        package username/hello/main
-
-        // Values
-
-        // Types and methods
-
-        // Type aliases
-
-        // Traits
-
-    "#]]
-    .assert_eq(main_mi_out);
-}
-
-#[test]
-fn test_dummy_core() {
-    let test_dir = TestDir::new("dummy-core.in");
-    let dir = dunce::canonicalize(test_dir.as_ref()).unwrap();
-
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["check", "--sort-input"])
-        .assert()
-        .success();
-
-    #[cfg(unix)]
-    {
-        let p = dir.join("target/packages.json");
-        check(
-            replace_dir(&std::fs::read_to_string(p).unwrap(), &dir),
-            expect![[r#"
-                {
-                  "source_dir": "$ROOT",
-                  "name": "moonbitlang/core",
-                  "packages": [
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/0",
-                      "root": "moonbitlang/core",
-                      "rel": "0",
-                      "files": {
-                        "$ROOT/0/lib.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        },
-                        "$ROOT/0/y.js.mbt": {
-                          "backend": [
-                            "Js"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y.wasm.mbt": {
-                          "backend": [
-                            "Wasm"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "wbtest-files": {
-                        "$ROOT/0/y_wbtest.js.mbt": {
-                          "backend": [
-                            "Js"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y_wbtest.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        },
-                        "$ROOT/0/y_wbtest.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y_wbtest.wasm.mbt": {
-                          "backend": [
-                            "Wasm"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/wasm-gc/release/check/0/0.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/1",
-                      "root": "moonbitlang/core",
-                      "rel": "1",
-                      "files": {
-                        "$ROOT/1/lib.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        },
-                        "$ROOT/1/x.js.mbt": {
-                          "backend": [
-                            "Js"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/1/x.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/1/x.wasm.mbt": {
-                          "backend": [
-                            "Wasm"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "wbtest-files": {
-                        "$ROOT/1/x_wbtest.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/wasm-gc/release/check/1/1.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/2",
-                      "root": "moonbitlang/core",
-                      "rel": "2",
-                      "files": {
-                        "$ROOT/2/lib.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        }
-                      },
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [
-                        {
-                          "path": "moonbitlang/core/1",
-                          "alias": "1"
-                        }
-                      ],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/wasm-gc/release/check/2/2.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/char",
-                      "root": "moonbitlang/core",
-                      "rel": "char",
-                      "files": {},
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [
-                        {
-                          "path": "moonbitlang/core/coverage",
-                          "alias": "coverage"
-                        }
-                      ],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/wasm-gc/release/check/char/char.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/coverage",
-                      "root": "moonbitlang/core",
-                      "rel": "coverage",
-                      "files": {},
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/wasm-gc/release/check/coverage/coverage.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/iter",
-                      "root": "moonbitlang/core",
-                      "rel": "iter",
-                      "files": {},
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [
-                        {
-                          "path": "moonbitlang/core/coverage",
-                          "alias": "coverage"
-                        }
-                      ],
-                      "wbtest-deps": [
-                        {
-                          "path": "moonbitlang/core/char",
-                          "alias": "char"
-                        }
-                      ],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/wasm-gc/release/check/iter/iter.mi"
-                    }
-                  ],
-                  "deps": [],
-                  "backend": "wasm-gc",
-                  "opt_level": "release",
-                  "source": null
-                }"#]],
-        );
-    }
-    snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["check", "--target", "js", "--sort-input"])
-        .assert()
-        .success();
-
-    #[cfg(unix)]
-    {
-        let p = dir.join("target/packages.json");
-        check(
-            replace_dir(&std::fs::read_to_string(p).unwrap(), &dir),
-            expect![[r#"
-                {
-                  "source_dir": "$ROOT",
-                  "name": "moonbitlang/core",
-                  "packages": [
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/0",
-                      "root": "moonbitlang/core",
-                      "rel": "0",
-                      "files": {
-                        "$ROOT/0/lib.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        },
-                        "$ROOT/0/y.js.mbt": {
-                          "backend": [
-                            "Js"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y.wasm.mbt": {
-                          "backend": [
-                            "Wasm"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "wbtest-files": {
-                        "$ROOT/0/y_wbtest.js.mbt": {
-                          "backend": [
-                            "Js"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y_wbtest.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        },
-                        "$ROOT/0/y_wbtest.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/0/y_wbtest.wasm.mbt": {
-                          "backend": [
-                            "Wasm"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/js/release/check/0/0.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/1",
-                      "root": "moonbitlang/core",
-                      "rel": "1",
-                      "files": {
-                        "$ROOT/1/lib.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        },
-                        "$ROOT/1/x.js.mbt": {
-                          "backend": [
-                            "Js"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/1/x.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        },
-                        "$ROOT/1/x.wasm.mbt": {
-                          "backend": [
-                            "Wasm"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "wbtest-files": {
-                        "$ROOT/1/x_wbtest.wasm-gc.mbt": {
-                          "backend": [
-                            "WasmGC"
-                          ],
-                          "optlevel": [
-                            "Release",
-                            "Debug"
-                          ]
-                        }
-                      },
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/js/release/check/1/1.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/2",
-                      "root": "moonbitlang/core",
-                      "rel": "2",
-                      "files": {
-                        "$ROOT/2/lib.mbt": {
-                          "backend": [
-                            "Wasm",
-                            "WasmGC",
-                            "Js",
-                            "Native",
-                            "LLVM"
-                          ],
-                          "optlevel": [
-                            "Debug",
-                            "Release"
-                          ]
-                        }
-                      },
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [
-                        {
-                          "path": "moonbitlang/core/1",
-                          "alias": "1"
-                        }
-                      ],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/js/release/check/2/2.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/char",
-                      "root": "moonbitlang/core",
-                      "rel": "char",
-                      "files": {},
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [
-                        {
-                          "path": "moonbitlang/core/coverage",
-                          "alias": "coverage"
-                        }
-                      ],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/js/release/check/char/char.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/coverage",
-                      "root": "moonbitlang/core",
-                      "rel": "coverage",
-                      "files": {},
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [],
-                      "wbtest-deps": [],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/js/release/check/coverage/coverage.mi"
-                    },
-                    {
-                      "is-main": false,
-                      "is-third-party": false,
-                      "root-path": "$ROOT/iter",
-                      "root": "moonbitlang/core",
-                      "rel": "iter",
-                      "files": {},
-                      "wbtest-files": {},
-                      "test-files": {},
-                      "mbt-md-files": {},
-                      "deps": [
-                        {
-                          "path": "moonbitlang/core/coverage",
-                          "alias": "coverage"
-                        }
-                      ],
-                      "wbtest-deps": [
-                        {
-                          "path": "moonbitlang/core/char",
-                          "alias": "char"
-                        }
-                      ],
-                      "test-deps": [],
-                      "artifact": "$ROOT/target/js/release/check/iter/iter.mi"
-                    }
-                  ],
-                  "deps": [],
-                  "backend": "js",
-                  "opt_level": "release",
-                  "source": null
-                }"#]],
-        );
-    };
-
-    check(
-        get_stdout(&dir, ["check", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc check -o ./target/wasm-gc/release/check/coverage/coverage.mi -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc
-            moonc check -o ./target/wasm-gc/release/check/iter/iter.mi -pkg moonbitlang/core/iter -i ./target/wasm-gc/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc
-            moonc check -o ./target/wasm-gc/release/check/char/char.mi -pkg moonbitlang/core/char -i ./target/wasm-gc/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc
-            moonc check ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/release/check/1/1.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc check ./2/lib.mbt -o ./target/wasm-gc/release/check/2/2.mi -pkg moonbitlang/core/2 -i ./target/wasm-gc/release/check/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc check ./1/lib.mbt ./1/x.wasm-gc.mbt ./1/x_wbtest.wasm-gc.mbt -o ./target/wasm-gc/release/check/1/1.whitebox_test.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.wasm-gc.mbt ./0/y_wbtest.mbt ./0/y_wbtest.wasm-gc.mbt -o ./target/wasm-gc/release/check/0/0.whitebox_test.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.wasm-gc.mbt -o ./target/wasm-gc/release/check/0/0.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["check", "--dry-run", "--target", "wasm", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc check -o ./target/wasm/release/check/coverage/coverage.mi -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm
-            moonc check -o ./target/wasm/release/check/iter/iter.mi -pkg moonbitlang/core/iter -i ./target/wasm/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm
-            moonc check -o ./target/wasm/release/check/char/char.mi -pkg moonbitlang/core/char -i ./target/wasm/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm
-            moonc check ./1/lib.mbt ./1/x.wasm.mbt -o ./target/wasm/release/check/1/1.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm
-            moonc check ./2/lib.mbt -o ./target/wasm/release/check/2/2.mi -pkg moonbitlang/core/2 -i ./target/wasm/release/check/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm
-            moonc check ./1/lib.mbt ./1/x.wasm.mbt -o ./target/wasm/release/check/1/1.whitebox_test.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.wasm.mbt ./0/y_wbtest.mbt ./0/y_wbtest.wasm.mbt -o ./target/wasm/release/check/0/0.whitebox_test.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.wasm.mbt -o ./target/wasm/release/check/0/0.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["check", "--dry-run", "--target", "wasm-gc", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc check -o ./target/wasm-gc/release/check/coverage/coverage.mi -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc
-            moonc check -o ./target/wasm-gc/release/check/iter/iter.mi -pkg moonbitlang/core/iter -i ./target/wasm-gc/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc
-            moonc check -o ./target/wasm-gc/release/check/char/char.mi -pkg moonbitlang/core/char -i ./target/wasm-gc/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc
-            moonc check ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/release/check/1/1.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc check ./2/lib.mbt -o ./target/wasm-gc/release/check/2/2.mi -pkg moonbitlang/core/2 -i ./target/wasm-gc/release/check/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc check ./1/lib.mbt ./1/x.wasm-gc.mbt ./1/x_wbtest.wasm-gc.mbt -o ./target/wasm-gc/release/check/1/1.whitebox_test.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.wasm-gc.mbt ./0/y_wbtest.mbt ./0/y_wbtest.wasm-gc.mbt -o ./target/wasm-gc/release/check/0/0.whitebox_test.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.wasm-gc.mbt -o ./target/wasm-gc/release/check/0/0.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["check", "--dry-run", "--target", "js", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc check -o ./target/js/release/check/coverage/coverage.mi -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target js
-            moonc check -o ./target/js/release/check/iter/iter.mi -pkg moonbitlang/core/iter -i ./target/js/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target js
-            moonc check -o ./target/js/release/check/char/char.mi -pkg moonbitlang/core/char -i ./target/js/release/check/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target js
-            moonc check ./1/lib.mbt ./1/x.js.mbt -o ./target/js/release/check/1/1.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target js
-            moonc check ./2/lib.mbt -o ./target/js/release/check/2/2.mi -pkg moonbitlang/core/2 -i ./target/js/release/check/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target js
-            moonc check ./1/lib.mbt ./1/x.js.mbt -o ./target/js/release/check/1/1.whitebox_test.mi -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target js -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.js.mbt ./0/y_wbtest.js.mbt ./0/y_wbtest.mbt -o ./target/js/release/check/0/0.whitebox_test.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target js -whitebox-test
-            moonc check ./0/lib.mbt ./0/y.js.mbt -o ./target/js/release/check/0/0.mi -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target js
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/release/build/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc build-package ./2/lib.mbt -o ./target/wasm-gc/release/build/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm-gc/release/build/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/1/1.core ./target/wasm-gc/release/build/2/2.core -main moonbitlang/core/2 -o ./target/wasm-gc/release/build/2/2.wasm -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/1/1.core -main moonbitlang/core/1 -o ./target/wasm-gc/release/build/1/1.wasm -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt -o ./target/wasm-gc/release/build/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/0/0.core -main moonbitlang/core/0 -o ./target/wasm-gc/release/build/0/0.wasm -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["build", "--dry-run", "--target", "wasm", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.wasm.mbt -o ./target/wasm/release/build/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm
-            moonc build-package ./2/lib.mbt -o ./target/wasm/release/build/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm/release/build/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm
-            moonc link-core ./target/wasm/release/build/1/1.core ./target/wasm/release/build/2/2.core -main moonbitlang/core/2 -o ./target/wasm/release/build/2/2.wasm -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -target wasm
-            moonc link-core ./target/wasm/release/build/1/1.core -main moonbitlang/core/1 -o ./target/wasm/release/build/1/1.wasm -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -target wasm
-            moonc build-package ./0/lib.mbt ./0/y.wasm.mbt -o ./target/wasm/release/build/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm
-            moonc link-core ./target/wasm/release/build/0/0.core -main moonbitlang/core/0 -o ./target/wasm/release/build/0/0.wasm -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -target wasm
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["build", "--dry-run", "--target", "wasm-gc", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/release/build/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc build-package ./2/lib.mbt -o ./target/wasm-gc/release/build/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm-gc/release/build/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/1/1.core ./target/wasm-gc/release/build/2/2.core -main moonbitlang/core/2 -o ./target/wasm-gc/release/build/2/2.wasm -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/1/1.core -main moonbitlang/core/1 -o ./target/wasm-gc/release/build/1/1.wasm -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt -o ./target/wasm-gc/release/build/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-            moonc link-core ./target/wasm-gc/release/build/0/0.core -main moonbitlang/core/0 -o ./target/wasm-gc/release/build/0/0.wasm -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["build", "--dry-run", "--target", "js", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.js.mbt -o ./target/js/release/build/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target js
-            moonc build-package ./2/lib.mbt -o ./target/js/release/build/2/2.core -pkg moonbitlang/core/2 -i ./target/js/release/build/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target js
-            moonc link-core ./target/js/release/build/1/1.core ./target/js/release/build/2/2.core -main moonbitlang/core/2 -o ./target/js/release/build/2/2.js -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -target js
-            moonc link-core ./target/js/release/build/1/1.core -main moonbitlang/core/1 -o ./target/js/release/build/1/1.js -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -target js
-            moonc build-package ./0/lib.mbt ./0/y.js.mbt -o ./target/js/release/build/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target js
-            moonc link-core ./target/js/release/build/0/0.core -main moonbitlang/core/0 -o ./target/js/release/build/0/0.js -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -target js
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/iter --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package -o ./target/wasm-gc/debug/test/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc -g -O0
-            moonc build-package ./target/wasm-gc/debug/test/iter/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/iter/iter.internal_test.core -pkg moonbitlang/core/iter -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/iter/iter.internal_test.core -main moonbitlang/core/iter -o ./target/wasm-gc/debug/test/iter/iter.internal_test.wasm -test-mode -pkg-config-path ./iter/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/iter:./iter -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/coverage --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./target/wasm-gc/debug/test/coverage/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/coverage/coverage.internal_test.core -pkg moonbitlang/core/coverage -is-main -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.internal_test.core -main moonbitlang/core/coverage -o ./target/wasm-gc/debug/test/coverage/coverage.internal_test.wasm -test-mode -pkg-config-path ./coverage/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/char --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./target/wasm-gc/debug/test/char/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/char/char.internal_test.core -pkg moonbitlang/core/char -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/char/char.internal_test.core -main moonbitlang/core/char -o ./target/wasm-gc/debug/test/char/char.internal_test.wasm -test-mode -pkg-config-path ./char/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/char:./char -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/2 --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/debug/test/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0
-            moonc build-package ./2/lib.mbt ./target/wasm-gc/debug/test/2/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/2/2.internal_test.core -pkg moonbitlang/core/2 -is-main -i ./target/wasm-gc/debug/test/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/1/1.core ./target/wasm-gc/debug/test/2/2.internal_test.core -main moonbitlang/core/2 -o ./target/wasm-gc/debug/test/2/2.internal_test.wasm -test-mode -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt ./1/x_wbtest.wasm-gc.mbt ./target/wasm-gc/debug/test/1/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/1/1.whitebox_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/1/1.whitebox_test.core -main moonbitlang/core/1 -o ./target/wasm-gc/debug/test/1/1.whitebox_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt ./target/wasm-gc/debug/test/1/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/1/1.internal_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/1/1.internal_test.core -main moonbitlang/core/1 -o ./target/wasm-gc/debug/test/1/1.internal_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt ./0/y_wbtest.mbt ./0/y_wbtest.wasm-gc.mbt ./target/wasm-gc/debug/test/0/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/0/0.whitebox_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/0/0.whitebox_test.core -main moonbitlang/core/0 -o ./target/wasm-gc/debug/test/0/0.whitebox_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt ./target/wasm-gc/debug/test/0/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/0/0.internal_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/0/0.internal_test.core -main moonbitlang/core/0 -o ./target/wasm-gc/debug/test/0/0.internal_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["test", "--dry-run", "--target", "wasm", "--sort-input"],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/iter --sort-input --target wasm --driver-kind internal
-            moonc build-package -o ./target/wasm/debug/test/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm -g -O0
-            moonc build-package ./target/wasm/debug/test/iter/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/iter/iter.internal_test.core -pkg moonbitlang/core/iter -is-main -i ./target/wasm/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/coverage/coverage.core ./target/wasm/debug/test/iter/iter.internal_test.core -main moonbitlang/core/iter -o ./target/wasm/debug/test/iter/iter.internal_test.wasm -test-mode -pkg-config-path ./iter/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/iter:./iter -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/coverage --sort-input --target wasm --driver-kind internal
-            moonc build-package ./target/wasm/debug/test/coverage/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/coverage/coverage.internal_test.core -pkg moonbitlang/core/coverage -is-main -pkg-sources moonbitlang/core/coverage:./coverage -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/coverage/coverage.internal_test.core -main moonbitlang/core/coverage -o ./target/wasm/debug/test/coverage/coverage.internal_test.wasm -test-mode -pkg-config-path ./coverage/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/char --sort-input --target wasm --driver-kind internal
-            moonc build-package ./target/wasm/debug/test/char/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/char/char.internal_test.core -pkg moonbitlang/core/char -is-main -i ./target/wasm/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/coverage/coverage.core ./target/wasm/debug/test/char/char.internal_test.core -main moonbitlang/core/char -o ./target/wasm/debug/test/char/char.internal_test.wasm -test-mode -pkg-config-path ./char/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/char:./char -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/2 --sort-input --target wasm --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.wasm.mbt -o ./target/wasm/debug/test/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm -g -O0
-            moonc build-package ./2/lib.mbt ./target/wasm/debug/test/2/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/2/2.internal_test.core -pkg moonbitlang/core/2 -is-main -i ./target/wasm/debug/test/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/1/1.core ./target/wasm/debug/test/2/2.internal_test.core -main moonbitlang/core/2 -o ./target/wasm/debug/test/2/2.internal_test.wasm -test-mode -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm --driver-kind whitebox
-            moonc build-package ./1/lib.mbt ./1/x.wasm.mbt ./target/wasm/debug/test/1/__generated_driver_for_whitebox_test.mbt -o ./target/wasm/debug/test/1/1.whitebox_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target wasm -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm/debug/test/1/1.whitebox_test.core -main moonbitlang/core/1 -o ./target/wasm/debug/test/1/1.whitebox_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.wasm.mbt ./target/wasm/debug/test/1/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/1/1.internal_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/1/1.internal_test.core -main moonbitlang/core/1 -o ./target/wasm/debug/test/1/1.internal_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm --driver-kind whitebox
-            moonc build-package ./0/lib.mbt ./0/y.wasm.mbt ./0/y_wbtest.mbt ./0/y_wbtest.wasm.mbt ./target/wasm/debug/test/0/__generated_driver_for_whitebox_test.mbt -o ./target/wasm/debug/test/0/0.whitebox_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target wasm -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm/debug/test/0/0.whitebox_test.core -main moonbitlang/core/0 -o ./target/wasm/debug/test/0/0.whitebox_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm --driver-kind internal
-            moonc build-package ./0/lib.mbt ./0/y.wasm.mbt ./target/wasm/debug/test/0/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/0/0.internal_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/0/0.internal_test.core -main moonbitlang/core/0 -o ./target/wasm/debug/test/0/0.internal_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["test", "--dry-run", "--target", "wasm-gc", "--sort-input"],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/iter --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package -o ./target/wasm-gc/debug/test/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc -g -O0
-            moonc build-package ./target/wasm-gc/debug/test/iter/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/iter/iter.internal_test.core -pkg moonbitlang/core/iter -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/iter/iter.internal_test.core -main moonbitlang/core/iter -o ./target/wasm-gc/debug/test/iter/iter.internal_test.wasm -test-mode -pkg-config-path ./iter/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/iter:./iter -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/coverage --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./target/wasm-gc/debug/test/coverage/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/coverage/coverage.internal_test.core -pkg moonbitlang/core/coverage -is-main -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.internal_test.core -main moonbitlang/core/coverage -o ./target/wasm-gc/debug/test/coverage/coverage.internal_test.wasm -test-mode -pkg-config-path ./coverage/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/char --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./target/wasm-gc/debug/test/char/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/char/char.internal_test.core -pkg moonbitlang/core/char -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/char/char.internal_test.core -main moonbitlang/core/char -o ./target/wasm-gc/debug/test/char/char.internal_test.wasm -test-mode -pkg-config-path ./char/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/char:./char -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/2 --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/debug/test/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0
-            moonc build-package ./2/lib.mbt ./target/wasm-gc/debug/test/2/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/2/2.internal_test.core -pkg moonbitlang/core/2 -is-main -i ./target/wasm-gc/debug/test/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/1/1.core ./target/wasm-gc/debug/test/2/2.internal_test.core -main moonbitlang/core/2 -o ./target/wasm-gc/debug/test/2/2.internal_test.wasm -test-mode -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt ./1/x_wbtest.wasm-gc.mbt ./target/wasm-gc/debug/test/1/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/1/1.whitebox_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/1/1.whitebox_test.core -main moonbitlang/core/1 -o ./target/wasm-gc/debug/test/1/1.whitebox_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt ./target/wasm-gc/debug/test/1/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/1/1.internal_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/1/1.internal_test.core -main moonbitlang/core/1 -o ./target/wasm-gc/debug/test/1/1.internal_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt ./0/y_wbtest.mbt ./0/y_wbtest.wasm-gc.mbt ./target/wasm-gc/debug/test/0/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/0/0.whitebox_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/0/0.whitebox_test.core -main moonbitlang/core/0 -o ./target/wasm-gc/debug/test/0/0.whitebox_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt ./target/wasm-gc/debug/test/0/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/0/0.internal_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/0/0.internal_test.core -main moonbitlang/core/0 -o ./target/wasm-gc/debug/test/0/0.internal_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["test", "--dry-run", "--target", "js", "--sort-input"],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/iter --sort-input --target js --driver-kind internal
-            moonc build-package -o ./target/js/debug/test/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target js -g -O0
-            moonc build-package ./target/js/debug/test/iter/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/iter/iter.internal_test.core -pkg moonbitlang/core/iter -is-main -i ./target/js/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/coverage/coverage.core ./target/js/debug/test/iter/iter.internal_test.core -main moonbitlang/core/iter -o ./target/js/debug/test/iter/iter.internal_test.js -test-mode -pkg-config-path ./iter/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/iter:./iter -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/coverage --sort-input --target js --driver-kind internal
-            moonc build-package ./target/js/debug/test/coverage/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/coverage/coverage.internal_test.core -pkg moonbitlang/core/coverage -is-main -pkg-sources moonbitlang/core/coverage:./coverage -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/coverage/coverage.internal_test.core -main moonbitlang/core/coverage -o ./target/js/debug/test/coverage/coverage.internal_test.js -test-mode -pkg-config-path ./coverage/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/char --sort-input --target js --driver-kind internal
-            moonc build-package ./target/js/debug/test/char/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/char/char.internal_test.core -pkg moonbitlang/core/char -is-main -i ./target/js/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/coverage/coverage.core ./target/js/debug/test/char/char.internal_test.core -main moonbitlang/core/char -o ./target/js/debug/test/char/char.internal_test.js -test-mode -pkg-config-path ./char/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/char:./char -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/2 --sort-input --target js --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.js.mbt -o ./target/js/debug/test/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target js -g -O0
-            moonc build-package ./2/lib.mbt ./target/js/debug/test/2/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/2/2.internal_test.core -pkg moonbitlang/core/2 -is-main -i ./target/js/debug/test/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/1/1.core ./target/js/debug/test/2/2.internal_test.core -main moonbitlang/core/2 -o ./target/js/debug/test/2/2.internal_test.js -test-mode -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target js --driver-kind whitebox
-            moonc build-package ./1/lib.mbt ./1/x.js.mbt ./target/js/debug/test/1/__generated_driver_for_whitebox_test.mbt -o ./target/js/debug/test/1/1.whitebox_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target js -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/js/debug/test/1/1.whitebox_test.core -main moonbitlang/core/1 -o ./target/js/debug/test/1/1.whitebox_test.js -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target js --driver-kind internal
-            moonc build-package ./1/lib.mbt ./1/x.js.mbt ./target/js/debug/test/1/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/1/1.internal_test.core -pkg moonbitlang/core/1 -is-main -pkg-sources moonbitlang/core/1:./1 -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/1/1.internal_test.core -main moonbitlang/core/1 -o ./target/js/debug/test/1/1.internal_test.js -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target js --driver-kind whitebox
-            moonc build-package ./0/lib.mbt ./0/y.js.mbt ./0/y_wbtest.js.mbt ./0/y_wbtest.mbt ./target/js/debug/test/0/__generated_driver_for_whitebox_test.mbt -o ./target/js/debug/test/0/0.whitebox_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target js -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/js/debug/test/0/0.whitebox_test.core -main moonbitlang/core/0 -o ./target/js/debug/test/0/0.whitebox_test.js -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target js --driver-kind internal
-            moonc build-package ./0/lib.mbt ./0/y.js.mbt ./target/js/debug/test/0/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/0/0.internal_test.core -pkg moonbitlang/core/0 -is-main -pkg-sources moonbitlang/core/0:./0 -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/0/0.internal_test.core -main moonbitlang/core/0 -o ./target/js/debug/test/0/0.internal_test.js -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["test", "--dry-run", "--enable-coverage", "--sort-input"],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/iter --sort-input --target wasm-gc --driver-kind internal --enable-coverage
-            moonc build-package -o ./target/wasm-gc/debug/test/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc -g -O0 -enable-coverage -coverage-package-override=@self
-            moonc build-package ./target/wasm-gc/debug/test/iter/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/iter/iter.internal_test.core -pkg moonbitlang/core/iter -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc -g -O0 -enable-coverage -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/iter/iter.internal_test.core -main moonbitlang/core/iter -o ./target/wasm-gc/debug/test/iter/iter.internal_test.wasm -test-mode -pkg-config-path ./iter/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/iter:./iter -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/coverage --sort-input --target wasm-gc --driver-kind internal --enable-coverage --coverage-package-override=@self
-            moonc build-package ./target/wasm-gc/debug/test/coverage/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/coverage/coverage.internal_test.core -pkg moonbitlang/core/coverage -is-main -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc -g -O0 -enable-coverage -coverage-package-override=@self -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.internal_test.core -main moonbitlang/core/coverage -o ./target/wasm-gc/debug/test/coverage/coverage.internal_test.wasm -test-mode -pkg-config-path ./coverage/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/char --sort-input --target wasm-gc --driver-kind internal --enable-coverage
-            moonc build-package ./target/wasm-gc/debug/test/char/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/char/char.internal_test.core -pkg moonbitlang/core/char -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc -g -O0 -enable-coverage -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/char/char.internal_test.core -main moonbitlang/core/char -o ./target/wasm-gc/debug/test/char/char.internal_test.wasm -test-mode -pkg-config-path ./char/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/char:./char -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/2 --sort-input --target wasm-gc --driver-kind internal --enable-coverage
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/debug/test/1/1.core -pkg moonbitlang/core/1 -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0 -enable-coverage
-            moonc build-package ./2/lib.mbt ./target/wasm-gc/debug/test/2/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/2/2.internal_test.core -pkg moonbitlang/core/2 -is-main -i ./target/wasm-gc/debug/test/1/1.mi:1 -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/2:./2 -target wasm-gc -g -O0 -enable-coverage -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/1/1.core ./target/wasm-gc/debug/test/2/2.internal_test.core -main moonbitlang/core/2 -o ./target/wasm-gc/debug/test/2/2.internal_test.wasm -test-mode -pkg-config-path ./2/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/1:./1 -pkg-sources moonbitlang/core/2:./2 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm-gc --driver-kind whitebox --enable-coverage
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt ./1/x_wbtest.wasm-gc.mbt ./target/wasm-gc/debug/test/1/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/1/1.whitebox_test.core -pkg moonbitlang/core/1 -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0 -enable-coverage -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/1/1.whitebox_test.core -main moonbitlang/core/1 -o ./target/wasm-gc/debug/test/1/1.whitebox_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/1 --sort-input --target wasm-gc --driver-kind internal --enable-coverage
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt ./target/wasm-gc/debug/test/1/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/1/1.internal_test.core -pkg moonbitlang/core/1 -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/1:./1 -target wasm-gc -g -O0 -enable-coverage -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/1/1.internal_test.core -main moonbitlang/core/1 -o ./target/wasm-gc/debug/test/1/1.internal_test.wasm -test-mode -pkg-config-path ./1/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/1:./1 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm-gc --driver-kind whitebox --enable-coverage
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt ./0/y_wbtest.mbt ./0/y_wbtest.wasm-gc.mbt ./target/wasm-gc/debug/test/0/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/0/0.whitebox_test.core -pkg moonbitlang/core/0 -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -g -O0 -enable-coverage -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/0/0.whitebox_test.core -main moonbitlang/core/0 -o ./target/wasm-gc/debug/test/0/0.whitebox_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/0 --sort-input --target wasm-gc --driver-kind internal --enable-coverage
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt ./target/wasm-gc/debug/test/0/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/0/0.internal_test.core -pkg moonbitlang/core/0 -is-main -i ./target/wasm-gc/debug/test/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/0:./0 -target wasm-gc -g -O0 -enable-coverage -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/coverage/coverage.core ./target/wasm-gc/debug/test/0/0.internal_test.core -main moonbitlang/core/0 -o ./target/wasm-gc/debug/test/0/0.internal_test.wasm -test-mode -pkg-config-path ./0/moon.pkg.json -pkg-sources moonbitlang/core/coverage:./coverage -pkg-sources moonbitlang/core/0:./0 -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["bundle", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt -o ./target/wasm-gc/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-            moonc build-package ./2/lib.mbt -o ./target/wasm-gc/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm-gc/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/wasm-gc/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/wasm-gc/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc
-            moonc bundle-core ./target/wasm-gc/release/bundle/0/0.core ./target/wasm-gc/release/bundle/1/1.core ./target/wasm-gc/release/bundle/2/2.core ./target/wasm-gc/release/bundle/coverage/coverage.core ./target/wasm-gc/release/bundle/char/char.core ./target/wasm-gc/release/bundle/iter/iter.core -o ./target/wasm-gc/release/bundle/core.core
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["bundle", "--dry-run", "--target", "wasm", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.wasm.mbt -o ./target/wasm/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm
-            moonc build-package -o ./target/wasm/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm
-            moonc build-package ./0/lib.mbt ./0/y.wasm.mbt -o ./target/wasm/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm
-            moonc build-package ./2/lib.mbt -o ./target/wasm/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm
-            moonc build-package -o ./target/wasm/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/wasm/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm
-            moonc build-package -o ./target/wasm/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/wasm/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm
-            moonc bundle-core ./target/wasm/release/bundle/0/0.core ./target/wasm/release/bundle/1/1.core ./target/wasm/release/bundle/2/2.core ./target/wasm/release/bundle/coverage/coverage.core ./target/wasm/release/bundle/char/char.core ./target/wasm/release/bundle/iter/iter.core -o ./target/wasm/release/bundle/core.core
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["bundle", "--dry-run", "--target", "wasm-gc", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt -o ./target/wasm-gc/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-            moonc build-package ./2/lib.mbt -o ./target/wasm-gc/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm-gc/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/wasm-gc/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/wasm-gc/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc
-            moonc bundle-core ./target/wasm-gc/release/bundle/0/0.core ./target/wasm-gc/release/bundle/1/1.core ./target/wasm-gc/release/bundle/2/2.core ./target/wasm-gc/release/bundle/coverage/coverage.core ./target/wasm-gc/release/bundle/char/char.core ./target/wasm-gc/release/bundle/iter/iter.core -o ./target/wasm-gc/release/bundle/core.core
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            ["bundle", "--dry-run", "--target", "js", "--sort-input"],
-        ),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.js.mbt -o ./target/js/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target js
-            moonc build-package -o ./target/js/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target js
-            moonc build-package ./0/lib.mbt ./0/y.js.mbt -o ./target/js/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target js
-            moonc build-package ./2/lib.mbt -o ./target/js/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/js/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target js
-            moonc build-package -o ./target/js/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/js/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target js
-            moonc build-package -o ./target/js/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/js/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target js
-            moonc bundle-core ./target/js/release/bundle/0/0.core ./target/js/release/bundle/1/1.core ./target/js/release/bundle/2/2.core ./target/js/release/bundle/coverage/coverage.core ./target/js/release/bundle/char/char.core ./target/js/release/bundle/iter/iter.core -o ./target/js/release/bundle/core.core
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            [
-                "bundle",
-                "--target",
-                "all",
-                "--dry-run",
-                "--sort-input",
-                "--serial",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./1/lib.mbt ./1/x.wasm.mbt -o ./target/wasm/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm
-            moonc build-package -o ./target/wasm/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm
-            moonc build-package ./0/lib.mbt ./0/y.wasm.mbt -o ./target/wasm/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm
-            moonc build-package ./2/lib.mbt -o ./target/wasm/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm
-            moonc build-package -o ./target/wasm/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/wasm/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm
-            moonc build-package -o ./target/wasm/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/wasm/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm
-            moonc bundle-core ./target/wasm/release/bundle/0/0.core ./target/wasm/release/bundle/1/1.core ./target/wasm/release/bundle/2/2.core ./target/wasm/release/bundle/coverage/coverage.core ./target/wasm/release/bundle/char/char.core ./target/wasm/release/bundle/iter/iter.core -o ./target/wasm/release/bundle/core.core
-            moonc build-package ./1/lib.mbt ./1/x.wasm-gc.mbt -o ./target/wasm-gc/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target wasm-gc
-            moonc build-package ./0/lib.mbt ./0/y.wasm-gc.mbt -o ./target/wasm-gc/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target wasm-gc
-            moonc build-package ./2/lib.mbt -o ./target/wasm-gc/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/wasm-gc/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/wasm-gc/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target wasm-gc
-            moonc build-package -o ./target/wasm-gc/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/wasm-gc/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target wasm-gc
-            moonc bundle-core ./target/wasm-gc/release/bundle/0/0.core ./target/wasm-gc/release/bundle/1/1.core ./target/wasm-gc/release/bundle/2/2.core ./target/wasm-gc/release/bundle/coverage/coverage.core ./target/wasm-gc/release/bundle/char/char.core ./target/wasm-gc/release/bundle/iter/iter.core -o ./target/wasm-gc/release/bundle/core.core
-            moonc build-package ./1/lib.mbt ./1/x.js.mbt -o ./target/js/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target js
-            moonc build-package -o ./target/js/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target js
-            moonc build-package ./0/lib.mbt ./0/y.js.mbt -o ./target/js/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target js
-            moonc build-package ./2/lib.mbt -o ./target/js/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/js/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target js
-            moonc build-package -o ./target/js/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/js/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target js
-            moonc build-package -o ./target/js/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/js/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target js
-            moonc bundle-core ./target/js/release/bundle/0/0.core ./target/js/release/bundle/1/1.core ./target/js/release/bundle/2/2.core ./target/js/release/bundle/coverage/coverage.core ./target/js/release/bundle/char/char.core ./target/js/release/bundle/iter/iter.core -o ./target/js/release/bundle/core.core
-            moonc build-package ./1/lib.mbt -o ./target/native/release/bundle/1/1.core -pkg moonbitlang/core/1 -pkg-sources moonbitlang/core/1:./1 -target native
-            moonc build-package -o ./target/native/release/bundle/coverage/coverage.core -pkg moonbitlang/core/coverage -pkg-sources moonbitlang/core/coverage:./coverage -target native
-            moonc build-package ./0/lib.mbt -o ./target/native/release/bundle/0/0.core -pkg moonbitlang/core/0 -pkg-sources moonbitlang/core/0:./0 -target native
-            moonc build-package ./2/lib.mbt -o ./target/native/release/bundle/2/2.core -pkg moonbitlang/core/2 -i ./target/native/release/bundle/1/1.mi:1 -pkg-sources moonbitlang/core/2:./2 -target native
-            moonc build-package -o ./target/native/release/bundle/char/char.core -pkg moonbitlang/core/char -i ./target/native/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/char:./char -target native
-            moonc build-package -o ./target/native/release/bundle/iter/iter.core -pkg moonbitlang/core/iter -i ./target/native/release/bundle/coverage/coverage.mi:coverage -pkg-sources moonbitlang/core/iter:./iter -target native
-            moonc bundle-core ./target/native/release/bundle/0/0.core ./target/native/release/bundle/1/1.core ./target/native/release/bundle/2/2.core ./target/native/release/bundle/coverage/coverage.core ./target/native/release/bundle/char/char.core ./target/native/release/bundle/iter/iter.core -o ./target/native/release/bundle/core.core
-        "#]],
-    );
-}
-
-#[test]
-#[ignore = "not implemented"]
-fn test_backend_flag() {
-    let dir = TestDir::new("backend-flag.in");
-
-    check(
-        get_stdout(&dir, ["check", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc check ./lib/hello.mbt -o ./target/js/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources username/hello/lib:./lib
-            moonc check ./main/main.mbt -o ./target/js/release/check/main/main.mi -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/js/release/bundle -i ./target/js/release/check/lib/lib.mi:lib -pkg-sources username/hello/main:./main
-            moonc check ./lib/hello.mbt ./lib/hello_test.mbt -o ./target/js/release/check/lib/lib.underscore_test.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources username/hello/lib:./lib
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["build", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/js/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources username/hello/lib:./lib
-            moonc build-package ./main/main.mbt -o ./target/js/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/js/release/bundle -i ./target/js/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main username/hello/main -o ./target/js/release/build/main/main.js -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -target js
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target/js/debug/test
-            moonc build-package ./lib/hello.mbt ./lib/hello_test.mbt ./target/js/debug/test/lib/__generated_driver_for_underscore_test.mbt -o ./target/js/debug/test/lib/lib.underscore_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources username/hello/lib:./lib -g -ryu
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/debug/test/lib/lib.underscore_test.core -main username/hello/lib -o ./target/js/debug/test/lib/lib.underscore_test.js -test-mode -pkg-sources username/hello/lib:./lib -target js -ryu
-            moonc build-package ./lib/hello.mbt ./target/js/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources username/hello/lib:./lib -g -ryu
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/js/debug/test/lib/lib.internal_test.js -test-mode -pkg-sources username/hello/lib:./lib -target js -ryu
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["bundle", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/js/release/bundle/lib/lib.core -pkg username/hello/lib -pkg-sources username/hello/lib:./lib
-            moonc build-package ./main/main.mbt -o ./target/js/release/bundle/main/main.core -pkg username/hello/main -is-main -i ./target/js/release/bundle/lib/lib.mi:lib -pkg-sources username/hello/main:./main
-            moonc bundle-core ./target/js/release/bundle/lib/lib.core ./target/js/release/bundle/main/main.core -o ./target/js/release/bundle/hello.core
-        "#]],
-    );
-}
-
-#[test]
-fn test_source_map() {
-    let dir = TestDir::new("hello.in");
-
-    // no -source-map in wasm backend
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--target",
-                "wasm",
-                "--debug",
-                "--dry-run",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./main/main.mbt -o ./target/wasm/debug/build/main/main.core -pkg hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -pkg-sources hello/main:./main -target wasm -g -O0
-            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/debug/build/main/main.core -main hello/main -o ./target/wasm/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm -g -O0
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--target",
-                "wasm-gc",
-                "--debug",
-                "--dry-run",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./main/main.mbt -o ./target/wasm-gc/debug/build/main/main.core -pkg hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources hello/main:./main -target wasm-gc -g -O0 -source-map
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/build/main/main.core -main hello/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -g -O0 -source-map
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--target",
-                "js",
-                "--debug",
-                "--dry-run",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./main/main.mbt -o ./target/js/debug/build/main/main.core -pkg hello/main -is-main -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources hello/main:./main -target js -g -O0 -source-map
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/debug/build/main/main.core -main hello/main -o ./target/js/debug/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target js -g -O0 -source-map
-        "#]],
-    );
-}
-
-#[test]
-fn test_find_ancestor_with_mod() {
-    let dir = TestDir::new("hello.in");
-
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["run", "main"]),
-        expect![[r#"
-            Hello, world!
-        "#]],
-    );
-}
-
-#[test]
-fn test_js_format() {
-    let dir = TestDir::new("js_format.in");
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--target",
-                "js",
-                "--sort-input",
-                "--dry-run",
-                "--nostd",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./lib3/hello.mbt -o ./target/js/release/build/lib3/lib3.core -pkg username/hello/lib3 -pkg-sources username/hello/lib3:./lib3 -target js
-            moonc link-core ./target/js/release/build/lib3/lib3.core -main username/hello/lib3 -o ./target/js/release/build/lib3/lib3.js -pkg-config-path ./lib3/moon.pkg.json -pkg-sources username/hello/lib3:./lib3 -target js -exported_functions=hello -js-format iife
-            moonc build-package ./lib2/hello.mbt -o ./target/js/release/build/lib2/lib2.core -pkg username/hello/lib2 -pkg-sources username/hello/lib2:./lib2 -target js
-            moonc link-core ./target/js/release/build/lib2/lib2.core -main username/hello/lib2 -o ./target/js/release/build/lib2/lib2.js -pkg-config-path ./lib2/moon.pkg.json -pkg-sources username/hello/lib2:./lib2 -target js -exported_functions=hello -js-format cjs
-            moonc build-package ./lib1/hello.mbt -o ./target/js/release/build/lib1/lib1.core -pkg username/hello/lib1 -pkg-sources username/hello/lib1:./lib1 -target js
-            moonc link-core ./target/js/release/build/lib1/lib1.core -main username/hello/lib1 -o ./target/js/release/build/lib1/lib1.js -pkg-config-path ./lib1/moon.pkg.json -pkg-sources username/hello/lib1:./lib1 -target js -exported_functions=hello -js-format esm
-            moonc build-package ./lib0/hello.mbt -o ./target/js/release/build/lib0/lib0.core -pkg username/hello/lib0 -pkg-sources username/hello/lib0:./lib0 -target js
-            moonc link-core ./target/js/release/build/lib0/lib0.core -main username/hello/lib0 -o ./target/js/release/build/lib0/lib0.js -pkg-config-path ./lib0/moon.pkg.json -pkg-sources username/hello/lib0:./lib0 -target js -exported_functions=hello -js-format esm
-        "#]],
-    );
-    let _ = get_stdout(&dir, ["build", "--target", "js", "--nostd"]);
-    let t = dir.join("target").join("js").join("release").join("build");
-    check(
-        std::fs::read_to_string(t.join("lib0").join("lib0.js"))
-            .unwrap()
-            .replace_crlf_to_lf(),
-        expect![[r#"
-            function username$hello$lib0$$hello() {
-              return "Hello, world!";
-            }
-            export { username$hello$lib0$$hello as hello }
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(t.join("lib1").join("lib1.js"))
-            .unwrap()
-            .replace_crlf_to_lf(),
-        expect![[r#"
-            function username$hello$lib1$$hello() {
-              return "Hello, world!";
-            }
-            export { username$hello$lib1$$hello as hello }
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(t.join("lib2").join("lib2.js"))
-            .unwrap()
-            .replace_crlf_to_lf(),
-        expect![[r#"
-            function username$hello$lib2$$hello() {
-              return "Hello, world!";
-            }
-            exports.hello = username$hello$lib2$$hello;
-        "#]],
-    );
-    check(
-        std::fs::read_to_string(t.join("lib3").join("lib3.js"))
-            .unwrap()
-            .replace_crlf_to_lf(),
-        expect![[r#"
-            (() => {
-              function username$hello$lib3$$hello() {
-                return "Hello, world!";
-              }
-              globalThis.hello = username$hello$lib3$$hello;
-            })();
-        "#]],
-    );
-}
-
-#[test]
-fn test_warn_list_dry_run() {
-    let dir = TestDir::new("warn_list.in");
-
-    check(
-        get_stdout(&dir, ["build", "--sort-input", "--no-render", "--dry-run"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -w -2 -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc build-package ./lib1/hello.mbt -w -1 -o ./target/wasm-gc/release/build/lib1/lib1.core -pkg username/hello/lib1 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib1:./lib1 -target wasm-gc
-            moonc build-package ./main/main.mbt -w -1-2 -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -i ./target/wasm-gc/release/build/lib1/lib1.mi:lib1 -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/lib1/lib1.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/lib1:./lib1 -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--warn-list",
-                "-29",
-                "--sort-input",
-                "--no-render",
-                "--dry-run",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -w -2-29 -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc build-package ./lib1/hello.mbt -w -1-29 -o ./target/wasm-gc/release/build/lib1/lib1.core -pkg username/hello/lib1 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib1:./lib1 -target wasm-gc
-            moonc build-package ./main/main.mbt -w -1-2-29 -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -i ./target/wasm-gc/release/build/lib1/lib1.mi:lib1 -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/lib1/lib1.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/lib1:./lib1 -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["test", "--sort-input"]),
-        expect![[r#"
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["bundle", "--sort-input", "--no-render", "--dry-run"]),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -w -2 -o ./target/wasm-gc/release/bundle/lib/lib.core -pkg username/hello/lib -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc build-package ./lib1/hello.mbt -w -1 -o ./target/wasm-gc/release/bundle/lib1/lib1.core -pkg username/hello/lib1 -pkg-sources username/hello/lib1:./lib1 -target wasm-gc
-            moonc build-package ./main/main.mbt -w -1-2 -o ./target/wasm-gc/release/bundle/main/main.core -pkg username/hello/main -is-main -i ./target/wasm-gc/release/bundle/lib/lib.mi:lib -i ./target/wasm-gc/release/bundle/lib1/lib1.mi:lib1 -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc bundle-core ./target/wasm-gc/release/bundle/lib/lib.core ./target/wasm-gc/release/bundle/lib1/lib1.core ./target/wasm-gc/release/bundle/main/main.core -o ./target/wasm-gc/release/bundle/hello.core
-        "#]],
-    );
-
-    // to cover `moon bundle` no work to do
-    get_stdout(&dir, ["bundle", "--sort-input"]);
-
-    check(
-        get_stdout(&dir, ["check", "--sort-input", "--no-render", "--dry-run"]),
-        expect![[r#"
-            moonc check ./lib/hello.mbt -w -2 -o ./target/wasm-gc/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc check ./lib1/hello.mbt -w -1 -o ./target/wasm-gc/release/check/lib1/lib1.mi -pkg username/hello/lib1 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib1:./lib1 -target wasm-gc
-            moonc check ./main/main.mbt -w -1-2 -o ./target/wasm-gc/release/check/main/main.mi -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib/lib.mi:lib -i ./target/wasm-gc/release/check/lib1/lib1.mi:lib1 -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc check ./lib/hello_test.mbt -w -2 -o ./target/wasm-gc/release/check/lib/lib.blackbox_test.mi -pkg username/hello/lib_blackbox_test -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib/lib.mi:lib -pkg-sources username/hello/lib_blackbox_test:./lib -target wasm-gc -blackbox-test
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            [
-                "check",
-                "--warn-list",
-                "-29",
-                "--sort-input",
-                "--no-render",
-                "--dry-run",
-            ],
-        ),
-        expect![[r#"
-            moonc check ./lib/hello.mbt -w -2-29 -o ./target/wasm-gc/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc check ./lib1/hello.mbt -w -1-29 -o ./target/wasm-gc/release/check/lib1/lib1.mi -pkg username/hello/lib1 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib1:./lib1 -target wasm-gc
-            moonc check ./main/main.mbt -w -1-2-29 -o ./target/wasm-gc/release/check/main/main.mi -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib/lib.mi:lib -i ./target/wasm-gc/release/check/lib1/lib1.mi:lib1 -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc check ./lib/hello_test.mbt -w -2-29 -o ./target/wasm-gc/release/check/lib/lib.blackbox_test.mi -pkg username/hello/lib_blackbox_test -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib/lib.mi:lib -pkg-sources username/hello/lib_blackbox_test:./lib -target wasm-gc -blackbox-test
-        "#]],
-    );
-}
-
-#[test]
-fn test_warn_list_real_run() {
-    let dir = TestDir::new("warn_list.in");
-
-    check(
-        get_stderr(&dir, ["build", "--sort-input", "--no-render"]),
-        expect![[r#"
-            Finished. moon: ran 4 tasks, now up to date
-        "#]],
-    );
-
-    check(
-        get_stderr(&dir, ["test", "--sort-input"])
-            .lines()
-            .filter(|it| !it.starts_with("Blocking waiting for file lock"))
-            .collect::<String>(),
-        expect![[r#""#]],
-    );
-    check(
-        get_stdout(&dir, ["test", "--sort-input"]),
-        expect![[r#"
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stderr(&dir, ["bundle", "--sort-input", "--no-render"]),
-        expect![[r#"
-            Finished. moon: ran 4 tasks, now up to date
-        "#]],
-    );
-
-    // to cover `moon bundle` no work to do
-    get_stdout(&dir, ["bundle", "--sort-input"]);
-
-    check(
-        get_stderr(&dir, ["check", "--sort-input", "--no-render"]),
-        expect![[r#"
-            Finished. moon: ran 4 tasks, now up to date
-        "#]],
-    );
-}
-
-#[test]
-fn test_alert_list() {
-    std::env::set_var("NO_COLOR", "1");
-    let dir = TestDir::new("alert_list.in");
-
-    check(
-        get_stderr(&dir, ["build", "--sort-input"]),
-        expect![[r#"
-            Warning: [2000]
-               ╭─[$ROOT/main/main.mbt:3:3]
-               │
-             3 │   alert_2();
-               │   ───┬───  
-               │      ╰───── Warning (Alert alert_2): alert_2
-            ───╯
-            Finished. moon: ran 3 tasks, now up to date
-        "#]],
-    );
-
-    check(
-        get_stdout(&dir, ["test", "--sort-input"]),
-        expect![[r#"
-            Total tests: 1, passed: 1, failed: 0.
-        "#]],
-    );
-
-    check(
-        get_stderr(&dir, ["bundle", "--sort-input"]),
-        expect![[r#"
-            Warning: [2000]
-               ╭─[$ROOT/main/main.mbt:3:3]
-               │
-             3 │   alert_2();
-               │   ───┬───  
-               │      ╰───── Warning (Alert alert_2): alert_2
-            ───╯
-            Finished. moon: ran 3 tasks, now up to date
-        "#]],
-    );
-
-    check(
-        get_stderr(&dir, ["check", "--sort-input"]),
-        expect![[r#"
-            Warning: [2000]
-               ╭─[$ROOT/main/main.mbt:3:3]
-               │
-             3 │   alert_2();
-               │   ───┬───  
-               │      ╰───── Warning (Alert alert_2): alert_2
-            ───╯
-            Finished. moon: ran 2 tasks, now up to date
-        "#]],
-    );
-}
-
-#[test]
-fn test_mod_level_warn_alert_list() {
-    let dir = TestDir::new("mod_level_warn&alert_list.in");
-
-    check(
-        get_stdout(&dir, ["check", "--dry-run"]),
-        expect![[r#"
-            moonc check ./lib/hello.mbt -w -1 -alert -alert_1 -o ./target/wasm-gc/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
-            moonc check ./main/main.mbt -w -1-2 -alert -alert_1-alert_2 -o ./target/wasm-gc/release/check/main/main.mi -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target wasm-gc
-        "#]],
-    );
-}
-
-#[test]
 fn test_no_work_to_do() {
-    let dir = TestDir::new("moon_new.in");
+    let dir = TestDir::new("moon_new/plain");
     let out = get_stderr(&dir, ["check"]);
     assert!(out.contains("now up to date"));
 
@@ -3997,24 +95,24 @@ fn test_moon_test_release() {
     check(
         get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind whitebox --mode test
+            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -source-map -whitebox-test -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
 
     check(
         get_stdout(&dir, ["test", "--release", "--dry-run", "--sort-input"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind whitebox --release
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/release/test/lib/lib.whitebox_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -whitebox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.whitebox_test.core -main username/hello/lib -o ./target/wasm-gc/release/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal --release
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/release/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/release/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind whitebox --release --mode test
+            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/release/test/lib/lib.whitebox_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -source-map -whitebox-test -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.whitebox_test.core -main username/hello/lib -o ./target/wasm-gc/release/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal --release --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/release/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/release/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -source-map
         "#]],
     );
 
@@ -4046,340 +144,6 @@ fn test_backtrace() {
 }
 
 #[test]
-fn test_deny_warn() {
-    std::env::set_var("NO_COLOR", "1");
-    let dir = TestDir::new("test_deny_warn.in");
-
-    check(
-        get_stderr(&dir, ["check", "--sort-input"]),
-        expect![[r#"
-            Warning: [2000]
-                ╭─[$ROOT/lib/hello.mbt:13:3]
-                │
-             13 │   alert_1();
-                │   ───┬───  
-                │      ╰───── Warning (Alert alert_1): alert_1
-            ────╯
-            Warning: [2000]
-                ╭─[$ROOT/lib/hello.mbt:14:3]
-                │
-             14 │   alert_2();
-                │   ───┬───  
-                │      ╰───── Warning (Alert alert_2): alert_2
-            ────╯
-            Warning: [1002]
-               ╭─[$ROOT/lib/hello.mbt:4:7]
-               │
-             4 │   let a = 1;
-               │       ┬  
-               │       ╰── Warning: Unused variable 'a'
-            ───╯
-            Warning: [1002]
-                ╭─[$ROOT/lib/hello.mbt:11:7]
-                │
-             11 │   let 中文 = 2
-                │       ──┬─  
-                │         ╰─── Warning: Unused variable '中文'
-            ────╯
-            Warning: [1002]
-                ╭─[$ROOT/lib/hello.mbt:12:7]
-                │
-             12 │   let 🤣😭🤣😭🤣 = 2
-                │       ────┬─────  
-                │           ╰─────── Warning: Unused variable '🤣😭🤣😭🤣'
-            ────╯
-            Warning: [1002]
-               ╭─[$ROOT/main/main.mbt:2:7]
-               │
-             2 │   let a = 0
-               │       ┬  
-               │       ╰── Warning: Unused variable 'a'
-            ───╯
-            Finished. moon: ran 2 tasks, now up to date
-        "#]],
-    );
-
-    check(
-        get_err_stdout(&dir, ["check", "--deny-warn", "--sort-input"]),
-        expect![[r#"
-            failed: moonc check -error-format json -w @a-31-32 -alert @all-raise-throw-unsafe+deprecated $ROOT/lib/hello.mbt -o $ROOT/target/wasm-gc/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:$ROOT/lib -target wasm-gc
-        "#]],
-    );
-
-    check(
-        get_stderr(&dir, ["build", "--sort-input"]),
-        expect![[r#"
-            Warning: [2000]
-                ╭─[$ROOT/lib/hello.mbt:13:3]
-                │
-             13 │   alert_1();
-                │   ───┬───  
-                │      ╰───── Warning (Alert alert_1): alert_1
-            ────╯
-            Warning: [2000]
-                ╭─[$ROOT/lib/hello.mbt:14:3]
-                │
-             14 │   alert_2();
-                │   ───┬───  
-                │      ╰───── Warning (Alert alert_2): alert_2
-            ────╯
-            Warning: [1002]
-               ╭─[$ROOT/lib/hello.mbt:4:7]
-               │
-             4 │   let a = 1;
-               │       ┬  
-               │       ╰── Warning: Unused variable 'a'
-            ───╯
-            Warning: [1002]
-                ╭─[$ROOT/lib/hello.mbt:11:7]
-                │
-             11 │   let 中文 = 2
-                │       ──┬─  
-                │         ╰─── Warning: Unused variable '中文'
-            ────╯
-            Warning: [1002]
-                ╭─[$ROOT/lib/hello.mbt:12:7]
-                │
-             12 │   let 🤣😭🤣😭🤣 = 2
-                │       ────┬─────  
-                │           ╰─────── Warning: Unused variable '🤣😭🤣😭🤣'
-            ────╯
-            Warning: [1002]
-               ╭─[$ROOT/main/main.mbt:2:7]
-               │
-             2 │   let a = 0
-               │       ┬  
-               │       ╰── Warning: Unused variable 'a'
-            ───╯
-            Finished. moon: ran 3 tasks, now up to date
-        "#]],
-    );
-
-    check(
-        get_err_stdout(&dir, ["build", "--deny-warn", "--sort-input"]),
-        expect![[r#"
-            failed: moonc build-package -error-format json -w @a-31-32 -alert @all-raise-throw-unsafe+deprecated $ROOT/lib/hello.mbt -o $ROOT/target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:$ROOT/lib -target wasm-gc
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_test_no_entry_warning() {
-    let dir = TestDir::new("moon_test_no_entry_warning.in");
-
-    let out = snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["test"])
-        .assert()
-        .success()
-        .get_output()
-        .stderr
-        .to_owned();
-
-    check(
-        std::str::from_utf8(&out).unwrap(),
-        expect![[r#"
-            Warning: no test entry found(test block in main package is not support for now)
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_fmt() {
-    let dir = TestDir::new("moon_fmt.in");
-    check(
-        read(dir.join("lib").join("hello.mbt")),
-        expect![[r#"
-                pub fn hello() -> String { "Hello, world!" }
-            "#]],
-    );
-    check(
-        read(dir.join("main").join("main.mbt")),
-        expect![[r#"
-                fn main { println(@lib.hello()) }"#]],
-    );
-    let _ = get_stdout(&dir, ["fmt"]);
-    check(
-        read(dir.join("lib").join("hello.mbt")),
-        expect![[r#"
-            ///|
-            pub fn hello() -> String {
-              "Hello, world!"
-            }
-        "#]],
-    );
-    check(
-        read(dir.join("main").join("main.mbt")),
-        expect![[r#"
-            ///|
-            fn main {
-              println(@lib.hello())
-            }
-        "#]],
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn test_moon_fmt_002() {
-    let dir = TestDir::new("moon_fmt.in");
-    let _ = snapbox::cmd::Command::new(moon_bin())
-        .current_dir(&dir)
-        .args(["fmt", "--check"])
-        .assert()
-        .failure()
-        .get_output()
-        .stdout
-        .to_owned();
-    check(
-        read(dir.join("lib").join("hello.mbt")),
-        expect![[r#"
-            pub fn hello() -> String { "Hello, world!" }
-        "#]],
-    );
-    check(
-        read(dir.join("main").join("main.mbt")),
-        expect![[r#"
-            fn main { println(@lib.hello()) }"#]],
-    );
-    check(
-        read(
-            dir.join("target")
-                .join(TargetBackend::default().to_dir_name())
-                .join("release")
-                .join("format")
-                .join("lib")
-                .join("hello.mbt"),
-        ),
-        expect![[r#"
-            ///|
-            pub fn hello() -> String {
-              "Hello, world!"
-            }
-        "#]],
-    );
-    check(
-        read(
-            dir.join("target")
-                .join(TargetBackend::default().to_dir_name())
-                .join("release")
-                .join("format")
-                .join("main")
-                .join("main.mbt"),
-        ),
-        expect![[r#"
-            ///|
-            fn main {
-              println(@lib.hello())
-            }
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_fmt_extra_args() {
-    let dir = TestDir::new("moon_fmt.in");
-    check(
-        get_stdout(&dir, ["fmt", "--dry-run", "--sort-input"]),
-        expect![[r#"
-            moonfmt ./lib/hello.mbt -w -o ./target/wasm-gc/release/format/lib/hello.mbt
-            moonfmt ./lib/hello_wbtest.mbt -w -o ./target/wasm-gc/release/format/lib/hello_wbtest.mbt
-            moonfmt ./main/main.mbt -w -o ./target/wasm-gc/release/format/main/main.mbt
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["fmt", "--dry-run", "--sort-input", "--", "a", "b"]),
-        expect![[r#"
-            moonfmt ./lib/hello.mbt -w -o ./target/wasm-gc/release/format/lib/hello.mbt a b
-            moonfmt ./lib/hello_wbtest.mbt -w -o ./target/wasm-gc/release/format/lib/hello_wbtest.mbt a b
-            moonfmt ./main/main.mbt -w -o ./target/wasm-gc/release/format/main/main.mbt a b
-        "#]],
-    );
-    check(
-        get_stdout(&dir, ["fmt", "--check", "--sort-input", "--dry-run"]),
-        expect![[r#"
-            moon tool format-and-diff --old ./lib/hello.mbt --new ./target/wasm-gc/release/format/lib/hello.mbt
-            moon tool format-and-diff --old ./lib/hello_wbtest.mbt --new ./target/wasm-gc/release/format/lib/hello_wbtest.mbt
-            moon tool format-and-diff --old ./main/main.mbt --new ./target/wasm-gc/release/format/main/main.mbt
-        "#]],
-    );
-    check(
-        get_stdout(
-            &dir,
-            [
-                "fmt",
-                "--check",
-                "--sort-input",
-                "--dry-run",
-                "--",
-                "c",
-                "d",
-            ],
-        ),
-        expect![[r#"
-            moon tool format-and-diff --old ./lib/hello.mbt --new ./target/wasm-gc/release/format/lib/hello.mbt c d
-            moon tool format-and-diff --old ./lib/hello_wbtest.mbt --new ./target/wasm-gc/release/format/lib/hello_wbtest.mbt c d
-            moon tool format-and-diff --old ./main/main.mbt --new ./target/wasm-gc/release/format/main/main.mbt c d
-        "#]],
-    );
-}
-
-#[test]
-fn test_moon_fmt_block_style() {
-    let dir = TestDir::new("moon_fmt.in");
-    check(
-        get_stdout(&dir, ["fmt", "--block-style", "--sort-input", "--dry-run"]),
-        expect![[r#"
-            moonfmt ./lib/hello.mbt -w -o ./target/wasm-gc/release/format/lib/hello.mbt -block-style
-            moonfmt ./lib/hello_wbtest.mbt -w -o ./target/wasm-gc/release/format/lib/hello_wbtest.mbt -block-style
-            moonfmt ./main/main.mbt -w -o ./target/wasm-gc/release/format/main/main.mbt -block-style
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            ["fmt", "--block-style=true", "--sort-input", "--dry-run"],
-        ),
-        expect![[r#"
-            moonfmt ./lib/hello.mbt -w -o ./target/wasm-gc/release/format/lib/hello.mbt -block-style
-            moonfmt ./lib/hello_wbtest.mbt -w -o ./target/wasm-gc/release/format/lib/hello_wbtest.mbt -block-style
-            moonfmt ./main/main.mbt -w -o ./target/wasm-gc/release/format/main/main.mbt -block-style
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            ["fmt", "--block-style=false", "--sort-input", "--dry-run"],
-        ),
-        expect![[r#"
-            moonfmt ./lib/hello.mbt -w -o ./target/wasm-gc/release/format/lib/hello.mbt
-            moonfmt ./lib/hello_wbtest.mbt -w -o ./target/wasm-gc/release/format/lib/hello_wbtest.mbt
-            moonfmt ./main/main.mbt -w -o ./target/wasm-gc/release/format/main/main.mbt
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "fmt",
-                "--block-style",
-                "--check",
-                "--sort-input",
-                "--dry-run",
-            ],
-        ),
-        expect![[r#"
-            moon tool format-and-diff --old ./lib/hello.mbt --new ./target/wasm-gc/release/format/lib/hello.mbt --block-style
-            moon tool format-and-diff --old ./lib/hello_wbtest.mbt --new ./target/wasm-gc/release/format/lib/hello_wbtest.mbt --block-style
-            moon tool format-and-diff --old ./main/main.mbt --new ./target/wasm-gc/release/format/main/main.mbt --block-style
-        "#]],
-    );
-}
-
-#[test]
 fn test_export_memory_name() {
     let dir = TestDir::new("export_memory.in");
     let _ = get_stdout(&dir, ["build", "--target", "wasm-gc", "--output-wat"]);
@@ -4399,7 +163,7 @@ fn test_export_memory_name() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -export-memory-name awesome_memory
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -export-memory-name awesome_memory
         "#]],
     );
 
@@ -4411,7 +175,7 @@ fn test_export_memory_name() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -pkg-sources username/hello/lib:./lib -target wasm
             moonc build-package ./main/main.mbt -o ./target/wasm/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -i ./target/wasm/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target wasm
-            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core ./target/wasm/release/build/main/main.core -main username/hello/main -o ./target/wasm/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm -export-memory-name awesome_memory
+            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core ./target/wasm/release/build/main/main.core -main username/hello/main -o ./target/wasm/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm -export-memory-name awesome_memory
         "#]],
     );
 
@@ -4423,7 +187,7 @@ fn test_export_memory_name() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/js/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources username/hello/lib:./lib -target js
             moonc build-package ./main/main.mbt -o ./target/js/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/js/release/bundle -i ./target/js/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target js
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main username/hello/main -o ./target/js/release/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target js
+            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main username/hello/main -o ./target/js/release/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target js
         "#]],
     );
 }
@@ -4436,7 +200,7 @@ fn test_no_block_params() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./lib -target wasm-gc
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -no-block-params
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -no-block-params
         "#]],
     );
 
@@ -4448,7 +212,7 @@ fn test_no_block_params() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -pkg-sources username/hello/lib:./lib -target wasm
             moonc build-package ./main/main.mbt -o ./target/wasm/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -i ./target/wasm/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target wasm
-            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core ./target/wasm/release/build/main/main.core -main username/hello/main -o ./target/wasm/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm -no-block-params
+            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core ./target/wasm/release/build/main/main.core -main username/hello/main -o ./target/wasm/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm -no-block-params
         "#]],
     );
 
@@ -4460,7 +224,7 @@ fn test_no_block_params() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/js/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/js/release/bundle -pkg-sources username/hello/lib:./lib -target js
             moonc build-package ./main/main.mbt -o ./target/js/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/js/release/bundle -i ./target/js/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./main -target js
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main username/hello/main -o ./target/js/release/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target js
+            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/js/release/bundle/core.core ./target/js/release/build/lib/lib.core ./target/js/release/build/main/main.core -main username/hello/main -o ./target/js/release/build/main/main.js -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/lib:./lib -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target js
         "#]],
     );
 }
@@ -4613,7 +377,7 @@ fn mooncakes_io_smoke_test() {
     if std::env::var("CI").is_err() {
         return;
     }
-    let dir = TestDir::new("hello.in");
+    let dir = TestDir::new("hello");
     let _ = get_stdout(&dir, ["update"]);
     let _ = get_stdout(&dir, ["add", "lijunchen/hello2@0.1.0"]);
     check(
@@ -4899,7 +663,7 @@ fn test_whitespace_parent_space() -> anyhow::Result<()> {
         expect![[r#"
             moonc build-package "./main lib/hello.mbt" -o "./target/wasm-gc/release/build/main lib/main lib.core" -pkg "username/hello/main lib" -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources "username/hello/main lib:./main lib" -target wasm-gc
             moonc build-package "./main exe/main.mbt" -o "./target/wasm-gc/release/build/main exe/main exe.core" -pkg "username/hello/main exe" -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i "./target/wasm-gc/release/build/main lib/main lib.mi:lib" -pkg-sources "username/hello/main exe:./main exe" -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core "./target/wasm-gc/release/build/main lib/main lib.core" "./target/wasm-gc/release/build/main exe/main exe.core" -main "username/hello/main exe" -o "./target/wasm-gc/release/build/main exe/main exe.wasm" -pkg-config-path "./main exe/moon.pkg.json" -pkg-sources "username/hello/main lib:./main lib" -pkg-sources "username/hello/main exe:./main exe" -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core "./target/wasm-gc/release/build/main lib/main lib.core" "./target/wasm-gc/release/build/main exe/main exe.core" -main "username/hello/main exe" -o "./target/wasm-gc/release/build/main exe/main exe.wasm" -pkg-config-path "./main exe/moon.pkg.json" -pkg-sources "username/hello/main lib:./main lib" -pkg-sources "username/hello/main exe:./main exe" -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
         "#]],
     );
 
@@ -4917,8 +681,8 @@ fn test_whitespace_parent_space() -> anyhow::Result<()> {
     check(
         &out,
         expect![[r#"
-        Finished. moon: ran 3 tasks, now up to date
-    "#]],
+            Finished. moon: ran 3 tasks, now up to date
+        "#]],
     );
     Ok(())
 }
@@ -5056,7 +820,7 @@ fn debug_flag_test() {
             expect![[r#"
                 error: the argument '--release' cannot be used with '--debug'
 
-                Usage: moon test --release
+                Usage: moon test --release [SINGLE_FILE]
 
                 For more information, try '--help'.
             "#]],
@@ -5078,7 +842,7 @@ fn debug_flag_test() {
             expect![[r#"
                 error: the argument '--release' cannot be used with '--debug'
 
-                Usage: moon check --release [PACKAGE_PATH]
+                Usage: moon check --release [SINGLE_FILE]
 
                 For more information, try '--help'.
             "#]],
@@ -5118,7 +882,7 @@ fn test_moon_run_with_cli_args() {
         get_stdout(&dir, ["run", "main", "--dry-run"]),
         expect![[r#"
             moonc build-package ./main/main_wasm.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
             moonrun ./target/wasm-gc/release/build/main/main.wasm
         "#]],
     );
@@ -5139,7 +903,7 @@ fn test_moon_run_with_cli_args() {
         ),
         expect![[r#"
             moonc build-package ./main/main_wasm.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
             moonrun ./target/wasm-gc/release/build/main/main.wasm -- 中文 😄👍 hello 1242
         "#]],
     );
@@ -5178,10 +942,10 @@ fn test_third_party() {
     check(
         get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./.mooncakes/lijunchen/hello18/lib/hello.mbt -o ./target/wasm-gc/debug/test/.mooncakes/lijunchen/hello18/lib/lib.core -pkg lijunchen/hello18/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources lijunchen/hello18/lib:./.mooncakes/lijunchen/hello18/lib -target wasm-gc -g -O0
-            moonc build-package ./lib/test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/.mooncakes/lijunchen/hello18/lib/lib.mi:lib -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/.mooncakes/lijunchen/hello18/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources lijunchen/hello18/lib:./.mooncakes/lijunchen/hello18/lib -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./.mooncakes/lijunchen/hello18/lib/hello.mbt -w -a -alert -all -o ./target/wasm-gc/debug/test/.mooncakes/lijunchen/hello18/lib/lib.core -pkg lijunchen/hello18/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources lijunchen/hello18/lib:./.mooncakes/lijunchen/hello18/lib -target wasm-gc -g -O0 -source-map
+            moonc build-package ./lib/test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/.mooncakes/lijunchen/hello18/lib/lib.mi:lib -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/.mooncakes/lijunchen/hello18/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources lijunchen/hello18/lib:./.mooncakes/lijunchen/hello18/lib -pkg-sources username/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
 
@@ -5215,10 +979,10 @@ fn test_moonbitlang_x() {
     check(
         &build_output,
         expect![[r#"
-            moonc build-package ./.mooncakes/moonbitlang/x/stack/stack.mbt ./.mooncakes/moonbitlang/x/stack/types.mbt -o ./target/wasm-gc/release/build/.mooncakes/moonbitlang/x/stack/stack.core -pkg moonbitlang/x/stack -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -target wasm-gc
+            moonc build-package ./.mooncakes/moonbitlang/x/stack/stack.mbt ./.mooncakes/moonbitlang/x/stack/types.mbt -w -a -alert -all -o ./target/wasm-gc/release/build/.mooncakes/moonbitlang/x/stack/stack.core -pkg moonbitlang/x/stack -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -target wasm-gc
             moonc build-package ./src/lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/.mooncakes/moonbitlang/x/stack/stack.mi:stack -pkg-sources username/hello/lib:./src/lib -target wasm-gc
             moonc build-package ./src/main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -i ./target/wasm-gc/release/build/.mooncakes/moonbitlang/x/stack/stack.mi:stack -pkg-sources username/hello/main:./src/main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/.mooncakes/moonbitlang/x/stack/stack.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./src/main/moon.pkg.json -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/main:./src/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/.mooncakes/moonbitlang/x/stack/stack.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./src/main/moon.pkg.json -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/main:./src/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
         "#]],
     );
 
@@ -5226,14 +990,11 @@ fn test_moonbitlang_x() {
     check(
         &test_output,
         expect![[r#"
-            moonc build-package ./.mooncakes/moonbitlang/x/stack/stack.mbt ./.mooncakes/moonbitlang/x/stack/types.mbt -o ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.core -pkg moonbitlang/x/stack -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind blackbox
-            moonc build-package ./src/lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.mi:stack -pkg-sources username/hello/lib:./src/lib -target wasm-gc -g -O0
-            moonc build-package ./src/lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg username/hello/lib_blackbox_test -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -i ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.mi:stack -pkg-sources username/hello/lib_blackbox_test:./src/lib -target wasm-gc -g -O0 -blackbox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main username/hello/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./src/lib/moon.pkg.json -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/lib_blackbox_test:./src/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./src/lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.mi:stack -pkg-sources username/hello/lib:./src/lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./src/lib/moon.pkg.json -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -pkg-sources username/hello/lib:./src/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moonc build-package ./.mooncakes/moonbitlang/x/stack/stack.mbt ./.mooncakes/moonbitlang/x/stack/types.mbt -w -a -alert -all -o ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.core -pkg moonbitlang/x/stack -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind blackbox --mode test
+            moonc build-package ./src/lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.mi:stack -pkg-sources username/hello/lib:./src/lib -target wasm-gc -g -O0 -source-map
+            moonc build-package ./src/lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg username/hello/lib_blackbox_test -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -i ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.mi:stack -pkg-sources username/hello/lib_blackbox_test:./src/lib -target wasm-gc -g -O0 -source-map -blackbox-test -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/.mooncakes/moonbitlang/x/stack/stack.core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main username/hello/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./src/lib/moon.pkg.json -pkg-sources moonbitlang/x/stack:./.mooncakes/moonbitlang/x/stack -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/lib_blackbox_test:./src/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
 
@@ -5266,19 +1027,16 @@ fn test_blackbox_success() {
             ],
         ),
         expect![[r#"
-            moonc build-package ./D/hello.mbt -o ./target/wasm-gc/debug/test/D/D.core -pkg username/hello/D -pkg-sources username/hello/D:./D -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind blackbox
-            moonc build-package ./A/hello.mbt -o ./target/wasm-gc/debug/test/A/A.core -pkg username/hello/A -i ./target/wasm-gc/debug/test/D/D.mi:D -pkg-sources username/hello/A:./A -target wasm-gc -g -O0
-            moonc build-package ./C/hello.mbt -o ./target/wasm-gc/debug/test/C/C.core -pkg username/hello/C -pkg-sources username/hello/C:./C -target wasm-gc -g -O0
-            moonc build-package ./A/hello_test.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/A/A.blackbox_test.core -pkg username/hello/A_blackbox_test -is-main -i ./target/wasm-gc/debug/test/A/A.mi:A -i ./target/wasm-gc/debug/test/D/D.mi:D -i ./target/wasm-gc/debug/test/C/C.mi:C -pkg-sources username/hello/A_blackbox_test:./A -target wasm-gc -g -O0 -blackbox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/D/D.core ./target/wasm-gc/debug/test/C/C.core ./target/wasm-gc/debug/test/A/A.core ./target/wasm-gc/debug/test/A/A.blackbox_test.core -main username/hello/A_blackbox_test -o ./target/wasm-gc/debug/test/A/A.blackbox_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/D:./D -pkg-sources username/hello/C:./C -pkg-sources username/hello/A:./A -pkg-sources username/hello/A_blackbox_test:./A -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./B/hello.mbt -o ./target/wasm-gc/debug/test/B/B.core -pkg username/hello/B -pkg-sources username/hello/B:./B -target wasm-gc -g -O0
-            moonc build-package ./A/hello.mbt ./A/hello_wbtest.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/A/A.whitebox_test.core -pkg username/hello/A -is-main -i ./target/wasm-gc/debug/test/D/D.mi:D -i ./target/wasm-gc/debug/test/B/B.mi:B -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/D/D.core ./target/wasm-gc/debug/test/B/B.core ./target/wasm-gc/debug/test/A/A.whitebox_test.core -main username/hello/A -o ./target/wasm-gc/debug/test/A/A.whitebox_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/D:./D -pkg-sources username/hello/B:./B -pkg-sources username/hello/A:./A -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./A/hello.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/A/A.internal_test.core -pkg username/hello/A -is-main -i ./target/wasm-gc/debug/test/D/D.mi:D -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/D/D.core ./target/wasm-gc/debug/test/A/A.internal_test.core -main username/hello/A -o ./target/wasm-gc/debug/test/A/A.internal_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/D:./D -pkg-sources username/hello/A:./A -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moonc build-package ./D/hello.mbt -o ./target/wasm-gc/debug/test/D/D.core -pkg username/hello/D -pkg-sources username/hello/D:./D -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind blackbox --mode test
+            moonc build-package ./A/hello.mbt -o ./target/wasm-gc/debug/test/A/A.core -pkg username/hello/A -i ./target/wasm-gc/debug/test/D/D.mi:D -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -source-map
+            moonc build-package ./C/hello.mbt -o ./target/wasm-gc/debug/test/C/C.core -pkg username/hello/C -pkg-sources username/hello/C:./C -target wasm-gc -g -O0 -source-map
+            moonc build-package ./A/hello_test.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/A/A.blackbox_test.core -pkg username/hello/A_blackbox_test -is-main -i ./target/wasm-gc/debug/test/A/A.mi:A -i ./target/wasm-gc/debug/test/D/D.mi:D -i ./target/wasm-gc/debug/test/C/C.mi:C -pkg-sources username/hello/A_blackbox_test:./A -target wasm-gc -g -O0 -source-map -blackbox-test -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/D/D.core ./target/wasm-gc/debug/test/C/C.core ./target/wasm-gc/debug/test/A/A.core ./target/wasm-gc/debug/test/A/A.blackbox_test.core -main username/hello/A_blackbox_test -o ./target/wasm-gc/debug/test/A/A.blackbox_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/D:./D -pkg-sources username/hello/C:./C -pkg-sources username/hello/A:./A -pkg-sources username/hello/A_blackbox_test:./A -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/A --sort-input --target wasm-gc --driver-kind whitebox --mode test
+            moonc build-package ./B/hello.mbt -o ./target/wasm-gc/debug/test/B/B.core -pkg username/hello/B -pkg-sources username/hello/B:./B -target wasm-gc -g -O0 -source-map
+            moonc build-package ./A/hello.mbt ./A/hello_wbtest.mbt ./target/wasm-gc/debug/test/A/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/A/A.whitebox_test.core -pkg username/hello/A -is-main -i ./target/wasm-gc/debug/test/D/D.mi:D -i ./target/wasm-gc/debug/test/B/B.mi:B -pkg-sources username/hello/A:./A -target wasm-gc -g -O0 -source-map -whitebox-test -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/D/D.core ./target/wasm-gc/debug/test/B/B.core ./target/wasm-gc/debug/test/A/A.whitebox_test.core -main username/hello/A -o ./target/wasm-gc/debug/test/A/A.whitebox_test.wasm -test-mode -pkg-config-path ./A/moon.pkg.json -pkg-sources username/hello/D:./D -pkg-sources username/hello/B:./B -pkg-sources username/hello/A:./A -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
 
@@ -5398,19 +1156,22 @@ fn test_blackbox_success() {
                       "deps": [
                         {
                           "path": "username/hello/D",
-                          "alias": "D"
+                          "alias": "D",
+                          "fspath": "$ROOT/D"
                         }
                       ],
                       "wbtest-deps": [
                         {
                           "path": "username/hello/B",
-                          "alias": "B"
+                          "alias": "B",
+                          "fspath": "$ROOT/B"
                         }
                       ],
                       "test-deps": [
                         {
                           "path": "username/hello/C",
-                          "alias": "C"
+                          "alias": "C",
+                          "fspath": "$ROOT/C"
                         }
                       ],
                       "artifact": "$ROOT/target/wasm-gc/release/check/A/A.mi"
@@ -5579,17 +1340,21 @@ fn test_blackbox_failed() {
 #[test]
 fn test_blackbox_test_core_override() {
     let dir = TestDir::new("blackbox_test_core_override.in");
-    let output = get_stdout(&dir, ["test", "--enable-coverage", "--dry-run"]);
+    let output = get_stdout(
+        &dir,
+        ["test", "--enable-coverage", "--dry-run", "--sort-input"],
+    );
     check(
         &output,
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/builtin --target wasm-gc --driver-kind blackbox --enable-coverage --coverage-package-override=@self
-            moonc build-package ./builtin/main.mbt -o ./target/wasm-gc/debug/test/builtin/builtin.core -pkg moonbitlang/core/builtin -pkg-sources moonbitlang/core/builtin:./builtin -target wasm-gc -g -O0 -enable-coverage -coverage-package-override=@self
-            moonc build-package ./builtin/main_test.mbt ./target/wasm-gc/debug/test/builtin/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/builtin/builtin.blackbox_test.core -pkg moonbitlang/core/builtin_blackbox_test -is-main -i ./target/wasm-gc/debug/test/builtin/builtin.mi:builtin -pkg-sources moonbitlang/core/builtin_blackbox_test:./builtin -target wasm-gc -g -O0 -enable-coverage -coverage-package-override=moonbitlang/core/builtin -blackbox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/builtin/builtin.core ./target/wasm-gc/debug/test/builtin/builtin.blackbox_test.core -main moonbitlang/core/builtin_blackbox_test -o ./target/wasm-gc/debug/test/builtin/builtin.blackbox_test.wasm -test-mode -pkg-config-path ./builtin/moon.pkg.json -pkg-sources moonbitlang/core/builtin:./builtin -pkg-sources moonbitlang/core/builtin_blackbox_test:./builtin -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/builtin --target wasm-gc --driver-kind internal --enable-coverage --coverage-package-override=@self
-            moonc build-package ./builtin/main.mbt ./target/wasm-gc/debug/test/builtin/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/builtin/builtin.internal_test.core -pkg moonbitlang/core/builtin -is-main -pkg-sources moonbitlang/core/builtin:./builtin -target wasm-gc -g -O0 -enable-coverage -coverage-package-override=@self -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/builtin/builtin.internal_test.core -main moonbitlang/core/builtin -o ./target/wasm-gc/debug/test/builtin/builtin.internal_test.wasm -test-mode -pkg-config-path ./builtin/moon.pkg.json -pkg-sources moonbitlang/core/builtin:./builtin -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/builtin --sort-input --target wasm-gc --driver-kind blackbox --enable-coverage --coverage-package-override=@self --mode test
+            moonc build-package ./builtin/main.mbt -o ./target/wasm-gc/debug/test/builtin/builtin.core -pkg moonbitlang/core/builtin -pkg-sources moonbitlang/core/builtin:./builtin -target wasm-gc -g -O0 -source-map -enable-coverage -coverage-package-override=@self
+            moonc build-package -o ./target/wasm-gc/debug/test/prelude/prelude.core -pkg moonbitlang/core/prelude -pkg-sources moonbitlang/core/prelude:./prelude -target wasm-gc -g -O0 -source-map -enable-coverage
+            moonc build-package ./builtin/main_test.mbt ./target/wasm-gc/debug/test/builtin/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/builtin/builtin.blackbox_test.core -pkg moonbitlang/core/builtin_blackbox_test -is-main -i ./target/wasm-gc/debug/test/builtin/builtin.mi:builtin -i ./target/wasm-gc/debug/test/prelude/prelude.mi:prelude -pkg-sources moonbitlang/core/builtin_blackbox_test:./builtin -target wasm-gc -g -O0 -source-map -enable-coverage -coverage-package-override=moonbitlang/core/builtin -blackbox-test -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/prelude/prelude.core ./target/wasm-gc/debug/test/builtin/builtin.core ./target/wasm-gc/debug/test/builtin/builtin.blackbox_test.core -main moonbitlang/core/builtin_blackbox_test -o ./target/wasm-gc/debug/test/builtin/builtin.blackbox_test.wasm -test-mode -pkg-config-path ./builtin/moon.pkg.json -pkg-sources moonbitlang/core/prelude:./prelude -pkg-sources moonbitlang/core/builtin:./builtin -pkg-sources moonbitlang/core/builtin_blackbox_test:./builtin -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/core/builtin --sort-input --target wasm-gc --driver-kind internal --enable-coverage --coverage-package-override=@self --mode test
+            moonc build-package ./builtin/main.mbt ./target/wasm-gc/debug/test/builtin/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/builtin/builtin.internal_test.core -pkg moonbitlang/core/builtin -is-main -pkg-sources moonbitlang/core/builtin:./builtin -target wasm-gc -g -O0 -source-map -enable-coverage -coverage-package-override=@self -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/builtin/builtin.internal_test.core -main moonbitlang/core/builtin -o ./target/wasm-gc/debug/test/builtin/builtin.internal_test.wasm -test-mode -pkg-config-path ./builtin/moon.pkg.json -pkg-sources moonbitlang/core/builtin:./builtin -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
 
@@ -5720,473 +1485,42 @@ fn test_import_shared_memory() {
     );
 }
 
+#[cfg(unix)]
 #[test]
-fn test_many_targets() {
-    let dir = TestDir::new("test_many_targets.in");
-    check(
-        get_stdout(&dir, ["test", "--target", "all", "--serial"]),
-        expect![[r#"
-            Total tests: 0, passed: 0, failed: 0. [wasm]
-            Total tests: 0, passed: 0, failed: 0. [wasm-gc]
-            Total tests: 0, passed: 0, failed: 0. [js]
-        "#]],
-    );
+fn test_moon_run_native() {
+    let dir = TestDir::new("run_single_mbt_file.in");
 
-    check(
-        get_stdout(&dir, ["test", "--target", "js,wasm", "--serial"]),
-        expect![[r#"
-            Total tests: 0, passed: 0, failed: 0. [wasm]
-            Total tests: 0, passed: 0, failed: 0. [js]
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "check",
-                "--target",
-                "js,wasm",
-                "--dry-run",
-                "--serial",
-                "--nostd",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc check ./link/hello.mbt -o ./target/wasm/release/check/link/link.mi -pkg username/hello/link -pkg-sources username/hello/link:./link -target wasm
-            moonc check ./lib/hello.mbt -o ./target/wasm/release/check/lib/lib.mi -pkg username/hello/lib -pkg-sources username/hello/lib:./lib -target wasm
-            moonc check ./link/hello.mbt -o ./target/js/release/check/link/link.mi -pkg username/hello/link -pkg-sources username/hello/link:./link -target js
-            moonc check ./lib/hello.mbt -o ./target/js/release/check/lib/lib.mi -pkg username/hello/lib -pkg-sources username/hello/lib:./lib -target js
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "build",
-                "--target",
-                "js,wasm",
-                "--dry-run",
-                "--serial",
-                "--nostd",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./link/hello.mbt -o ./target/wasm/release/build/link/link.core -pkg username/hello/link -pkg-sources username/hello/link:./link -target wasm
-            moonc link-core ./target/wasm/release/build/link/link.core -main username/hello/link -o ./target/wasm/release/build/link/link.wasm -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -target wasm
-            moonc build-package ./link/hello.mbt -o ./target/js/release/build/link/link.core -pkg username/hello/link -pkg-sources username/hello/link:./link -target js
-            moonc link-core ./target/js/release/build/link/link.core -main username/hello/link -o ./target/js/release/build/link/link.js -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -target js
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "bundle",
-                "--target",
-                "js,wasm",
-                "--dry-run",
-                "--serial",
-                "--nostd",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moonc build-package ./lib/hello.mbt -o ./target/wasm/release/bundle/lib/lib.core -pkg username/hello/lib -pkg-sources username/hello/lib:./lib -target wasm
-            moonc build-package ./link/hello.mbt -o ./target/wasm/release/bundle/link/link.core -pkg username/hello/link -pkg-sources username/hello/link:./link -target wasm
-            moonc bundle-core ./target/wasm/release/bundle/lib/lib.core ./target/wasm/release/bundle/link/link.core -o ./target/wasm/release/bundle/hello.core
-            moonc build-package ./lib/hello.mbt -o ./target/js/release/bundle/lib/lib.core -pkg username/hello/lib -pkg-sources username/hello/lib:./lib -target js
-            moonc build-package ./link/hello.mbt -o ./target/js/release/bundle/link/link.core -pkg username/hello/link -pkg-sources username/hello/link:./link -target js
-            moonc bundle-core ./target/js/release/bundle/lib/lib.core ./target/js/release/bundle/link/link.core -o ./target/js/release/bundle/hello.core
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "--target",
-                "js,wasm",
-                "--dry-run",
-                "--serial",
-                "--nostd",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target wasm --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/wasm/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/wasm/debug/test/link/link.internal_test.wasm -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target js --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/js/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/js/debug/test/link/link.internal_test.js -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target js --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/js/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/js/debug/test/lib/lib.internal_test.js -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "--target",
-                "js,wasm",
-                "--dry-run",
-                "--serial",
-                "--nostd",
-                "--sort-input",
-                "-p",
-                "username/hello/lib",
-                "-f",
-                "hello.mbt",
-                "-i",
-                "0",
-            ],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target js --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/js/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/js/debug/test/lib/lib.internal_test.js -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "--target",
-                "js,wasm,all",
-                "--dry-run",
-                "--serial",
-                "--nostd",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target wasm --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/wasm/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/wasm/debug/test/link/link.internal_test.wasm -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/wasm-gc/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/wasm-gc/debug/test/link/link.internal_test.wasm -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target js --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/js/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/js/debug/test/link/link.internal_test.js -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target js --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/js/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/js/debug/test/lib/lib.internal_test.js -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-        "#]],
-    );
-
-    check(
-        get_stdout(
-            &dir,
-            [
-                "test",
-                "--target",
-                "all",
-                "--dry-run",
-                "--serial",
-                "--nostd",
-                "--sort-input",
-            ],
-        ),
-        expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target wasm --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/wasm/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/wasm/debug/test/link/link.internal_test.wasm -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target wasm -g -O0 -no-mi
-            moonc link-core ./target/wasm/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/wasm-gc/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/wasm-gc/debug/test/link/link.internal_test.wasm -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/link --sort-input --target js --driver-kind internal
-            moonc build-package ./link/hello.mbt ./target/js/debug/test/link/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/link/link.internal_test.core -pkg username/hello/link -is-main -pkg-sources username/hello/link:./link -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/link/link.internal_test.core -main username/hello/link -o ./target/js/debug/test/link/link.internal_test.js -test-mode -pkg-config-path ./link/moon.pkg.json -pkg-sources username/hello/link:./link -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target js --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/js/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/js/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -pkg-sources username/hello/lib:./lib -target js -g -O0 -no-mi
-            moonc link-core ./target/js/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/js/debug/test/lib/lib.internal_test.js -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources username/hello/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -js-format cjs -no-dts -target js -g -O0
-        "#]],
-    );
-}
-
-#[test]
-fn test_many_targets_auto_update_001() {
-    let dir = TestDir::new("test_many_targets_auto_update.in");
-    let _ = get_stdout(&dir, ["test", "-u", "--no-parallelize"]);
-    check(
-        read(dir.join("lib").join("x.wasm.mbt")),
-        expect![[r#"
-            test {
-              inspect!("wasm")
-            }
-        "#]],
-    );
-    check(
-        read(dir.join("lib").join("x.wasm-gc.mbt")),
-        expect![[r#"
-            test {
-              inspect!("wasm-gc", content="wasm-gc")
-            }
-        "#]],
-    );
-    check(
-        read(dir.join("lib").join("x.js.mbt")),
-        expect![[r#"
-            test {
-              inspect!("js")
-            }
-        "#]],
-    );
-
-    check(
-        read(dir.join("lib").join("x.native.mbt")),
-        expect![[r#"
-                test {
-                  inspect!("native")
-                }
-            "#]],
-    );
-}
-
-#[test]
-fn test_many_targets_auto_update_002() {
-    let dir = TestDir::new("test_many_targets_auto_update.in");
-    let _ = get_stdout(&dir, ["test", "--target", "js", "-u", "--no-parallelize"]);
-    check(
-        read(dir.join("lib").join("x.wasm.mbt")),
-        expect![[r#"
-            test {
-              inspect!("wasm")
-            }
-        "#]],
-    );
-    check(
-        read(dir.join("lib").join("x.wasm-gc.mbt")),
-        expect![[r#"
-            test {
-              inspect!("wasm-gc")
-            }
-        "#]],
-    );
-    check(
-        read(dir.join("lib").join("x.js.mbt")),
-        expect![[r#"
-            test {
-              inspect!("js", content="js")
-            }
-        "#]],
-    );
-
-    check(
-        read(dir.join("lib").join("x.native.mbt")),
-        expect![[r#"
-            test {
-              inspect!("native")
-            }
-            "#]],
-    );
-
-    let _ = get_stdout(
+    let output = get_stdout(
         &dir,
-        ["test", "--target", "native", "-u", "--no-parallelize"],
+        ["run", "a/b/single.mbt", "--target", "native", "--dry-run"],
     );
     check(
-        read(dir.join("lib").join("x.native.mbt")),
+        &output,
         expect![[r#"
-            test {
-              inspect!("native", content="native")
-            }
+            moonc build-package $ROOT/a/b/single.mbt -o $ROOT/a/b/target/single.core -std-path $MOON_HOME/lib/core/target/native/release/bundle -is-main -pkg moon/run/single -g -O0 -source-map -target native
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.c -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target native
+            $MOON_HOME/bin/internal/tcc -I$MOON_HOME/include -L$MOON_HOME/lib $MOON_HOME/lib/runtime.c -lm -DMOONBIT_NATIVE_NO_SYS_HEADER -run $ROOT/a/b/target/single.c
         "#]],
     );
-}
 
-#[test]
-fn test_many_targets_auto_update_003() {
-    let dir = TestDir::new("test_many_targets_auto_update.in");
-    let _ = get_stdout(&dir, ["test", "--target", "wasm", "-u", "--no-parallelize"]);
-    check(
-        read(dir.join("lib").join("x.wasm.mbt")),
-        expect![[r#"
-            test {
-              inspect!("wasm", content="wasm")
-            }
-        "#]],
-    );
-    check(
-        read(dir.join("lib").join("x.wasm-gc.mbt")),
-        expect![[r#"
-            test {
-              inspect!("wasm-gc")
-            }
-        "#]],
-    );
-    let _ = get_stdout(&dir, ["test", "--target", "js", "-u", "--no-parallelize"]);
-    check(
-        read(dir.join("lib").join("x.js.mbt")),
-        expect![[r#"
-            test {
-              inspect!("js", content="js")
-            }
-        "#]],
-    );
-}
-
-#[test]
-fn test_many_targets_auto_update_004() {
-    let dir = TestDir::new("test_many_targets_auto_update.in");
-    let _ = get_stdout(&dir, ["test", "--target", "wasm", "-u", "--no-parallelize"]);
-    check(
-        read(dir.join("lib").join("x.wasm.mbt")),
-        expect![[r#"
-            test {
-              inspect!("wasm", content="wasm")
-            }
-        "#]],
-    );
-    let _ = get_stdout(
+    let output = get_stdout(
         &dir,
-        ["test", "--target", "wasm-gc", "-u", "--no-parallelize"],
+        [
+            "run",
+            "a/b/single.mbt",
+            "--target",
+            "native",
+            "--dry-run",
+            "--release",
+        ],
     );
     check(
-        read(dir.join("lib").join("x.wasm-gc.mbt")),
+        &output,
         expect![[r#"
-            test {
-              inspect!("wasm-gc", content="wasm-gc")
-            }
-        "#]],
-    );
-    let _ = get_stdout(&dir, ["test", "--target", "js", "-u", "--no-parallelize"]);
-    check(
-        read(dir.join("lib").join("x.js.mbt")),
-        expect![[r#"
-            test {
-              inspect!("js", content="js")
-            }
-        "#]],
-    );
-}
-
-#[test]
-fn test_many_targets_expect_failed() {
-    let dir = TestDir::new("test_many_targets_expect_failed.in");
-    check(
-        get_err_stdout(
-            &dir,
-            ["test", "--target", "all", "--serial", "--sort-input"],
-        ),
-        expect![[r#"
-            test username/hello/lib/x.wasm.mbt::0 failed
-            expect test failed at $ROOT/lib/x.wasm.mbt:2:3-2:32
-            Diff:
-            ----
-            0wasm
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [wasm]
-            test username/hello/lib/x.wasm-gc.mbt::0 failed
-            expect test failed at $ROOT/lib/x.wasm-gc.mbt:2:3-2:35
-            Diff:
-            ----
-            1wasm-gc
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [wasm-gc]
-            test username/hello/lib/x.js.mbt::0 failed
-            expect test failed at $ROOT/lib/x.js.mbt:2:3-2:30
-            Diff:
-            ----
-            2js
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [js]
-        "#]],
-    );
-    check(
-        get_err_stdout(
-            &dir,
-            ["test", "--target", "js,wasm", "--sort-input", "--serial"],
-        ),
-        expect![[r#"
-            test username/hello/lib/x.wasm.mbt::0 failed
-            expect test failed at $ROOT/lib/x.wasm.mbt:2:3-2:32
-            Diff:
-            ----
-            0wasm
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [wasm]
-            test username/hello/lib/x.js.mbt::0 failed
-            expect test failed at $ROOT/lib/x.js.mbt:2:3-2:30
-            Diff:
-            ----
-            2js
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [js]
-        "#]],
-    );
-
-    check(
-        get_err_stdout(
-            &dir,
-            [
-                "test",
-                "--target",
-                "js,wasm,native",
-                "--sort-input",
-                "--serial",
-            ],
-        ),
-        expect![[r#"
-            test username/hello/lib/x.wasm.mbt::0 failed
-            expect test failed at $ROOT/lib/x.wasm.mbt:2:3-2:32
-            Diff:
-            ----
-            0wasm
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [wasm]
-            test username/hello/lib/x.js.mbt::0 failed
-            expect test failed at $ROOT/lib/x.js.mbt:2:3-2:30
-            Diff:
-            ----
-            2js
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [js]
-            test username/hello/lib/x.native.mbt::0 failed
-            expect test failed at $ROOT/lib/x.native.mbt:2:3-2:34
-            Diff:
-            ----
-            3native
-            ----
-
-            Total tests: 1, passed: 0, failed: 1. [native]
+            moonc build-package $ROOT/a/b/single.mbt -o $ROOT/a/b/target/single.core -std-path $MOON_HOME/lib/core/target/native/release/bundle -is-main -pkg moon/run/single -g -O0 -source-map -target native
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.c -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target native
+            cc -o $ROOT/a/b/target/single.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O0 $MOON_HOME/lib/runtime.c $ROOT/a/b/target/single.c -lm
+            $ROOT/a/b/target/single.exe
         "#]],
     );
 }
@@ -6210,7 +1544,7 @@ fn test_moon_run_single_mbt_file() {
         &output,
         expect![[r#"
             moonc build-package $ROOT/a/b/single.mbt -o $ROOT/a/b/target/single.core -std-path $MOON_HOME/lib/core/target/js/release/bundle -is-main -pkg moon/run/single -g -O0 -source-map -target js
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.js -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target js
+            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/js/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.js -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target js
         "#]],
     );
 
@@ -6231,7 +1565,7 @@ fn test_moon_run_single_mbt_file() {
         &output,
         expect![[r#"
             moonc build-package $ROOT/a/b/single.mbt -o $ROOT/a/b/target/single.core -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -is-main -pkg moon/run/single -g -O0 -source-map -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.wasm -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.wasm -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target wasm-gc
             moonrun $ROOT/a/b/target/single.wasm
         "#]],
     );
@@ -6244,7 +1578,7 @@ fn test_moon_run_single_mbt_file() {
         &output,
         expect![[r#"
             moonc build-package $ROOT/a/b/single.mbt -o $ROOT/a/b/target/single.core -std-path $MOON_HOME/lib/core/target/js/release/bundle -is-main -pkg moon/run/single -g -O0 -source-map -target js
-            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.js -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target js
+            moonc link-core $MOON_HOME/lib/core/target/js/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/js/release/bundle/core.core $ROOT/a/b/target/single.core -o $ROOT/a/b/target/single.js -pkg-sources moon/run/single:$ROOT/a/b -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target js
             node $ROOT/a/b/target/single.js
         "#]],
     );
@@ -6280,58 +1614,23 @@ fn test_moon_run_single_mbt_file() {
         &dir.join("a").join("b"),
         ["run", "single.mbt", "--target", "native"],
     );
-    check(
-        &output,
-        expect![[r#"
-            I am OK
-            "#]],
-    );
+    // cl have other output
+    assert!(output.contains("I am OK"));
 }
 
 #[test]
 fn test_moon_check_json_output() {
-    let dir = TestDir::new("alert_list.in");
+    let dir = TestDir::new("warns/deny_warn");
 
-    #[cfg(unix)]
-    {
-        check(
-            get_stdout(&dir, ["check", "--output-json", "-q"]),
-            expect![[r#"
-                {"$message_type":"diagnostic","level":"warning","loc":{"path":"$ROOT/main/main.mbt","start":{"line":3,"col":3},"end":{"line":3,"col":10}},"message":"Warning (Alert alert_2): alert_2","error_code":2000}
-            "#]],
-        );
-        check(
-            get_stderr(&dir, ["check", "--output-json", "-q"]),
-            expect![""],
-        );
-        check(
-            get_stderr(&dir, ["check", "--output-json"]),
-            expect![[r#"
-                Finished. moon: no work to do
-            "#]],
-        );
-    }
-
-    // windows crlf(\r\n)
-    #[cfg(windows)]
-    {
-        check(
-            get_stdout(&dir, ["check", "--output-json", "-q"]),
-            expect![[r#"
-            {"$message_type":"diagnostic","level":"warning","loc":{"path":"$ROOT/main/main.mbt","start":{"line":3,"col":3},"end":{"line":3,"col":10}},"message":"Warning (Alert alert_2): alert_2","error_code":2000}
+    check(
+        get_stdout(&dir, ["check", "--output-json", "-q"]),
+        expect![[r#"
+            {"$message_type":"diagnostic","level":"warning","loc":{"path":"$ROOT/lib/hello.mbt","start":{"line":4,"col":7},"end":{"line":4,"col":8}},"message":"Warning: Unused variable 'a'","error_code":2}
+            {"$message_type":"diagnostic","level":"warning","loc":{"path":"$ROOT/lib/hello.mbt","start":{"line":11,"col":7},"end":{"line":11,"col":9}},"message":"Warning: Unused variable '中文'","error_code":2}
+            {"$message_type":"diagnostic","level":"warning","loc":{"path":"$ROOT/lib/hello.mbt","start":{"line":12,"col":7},"end":{"line":12,"col":12}},"message":"Warning: Unused variable '🤣😭🤣😭🤣'","error_code":2}
+            {"$message_type":"diagnostic","level":"warning","loc":{"path":"$ROOT/main/main.mbt","start":{"line":2,"col":7},"end":{"line":2,"col":8}},"message":"Warning: Unused variable 'a'","error_code":2}
         "#]],
-        );
-        check(
-            get_stderr(&dir, ["check", "--output-json", "-q"]),
-            expect![""],
-        );
-        check(
-            get_stderr(&dir, ["check", "--output-json"]),
-            expect![[r#"
-                Finished. moon: no work to do
-            "#]],
-        );
-    }
+    );
 }
 
 #[test]
@@ -6417,34 +1716,6 @@ fn test_moon_run_single_mbt_file_inside_a_pkg() {
 }
 
 #[test]
-fn moon_test_parallelize_should_success() {
-    let dir = TestDir::new("test_filter_pkg_with_test_imports.in");
-
-    let output = get_stdout(&dir, ["test"]);
-    assert!(output.contains("Total tests: 14, passed: 14, failed: 0."));
-
-    let output = get_stdout(&dir, ["test", "--target", "native"]);
-    assert!(output.contains("Total tests: 14, passed: 14, failed: 0."));
-
-    let dir = TestDir::new("test_filter.in");
-
-    let output = get_err_stdout(&dir, ["test"]);
-    assert!(output.contains("Total tests: 13, passed: 11, failed: 2."));
-
-    let output = get_err_stdout(&dir, ["test", "--target", "native"]);
-    assert!(output.contains("Total tests: 13, passed: 11, failed: 2."));
-
-    let output = get_stdout(&dir, ["test", "-u", "--no-parallelize"]);
-    assert!(output.contains("Total tests: 13, passed: 13, failed: 0."));
-
-    let output = get_stdout(
-        &dir,
-        ["test", "-u", "--no-parallelize", "--target", "native"],
-    );
-    assert!(output.contains("Total tests: 13, passed: 13, failed: 0."));
-}
-
-#[test]
 fn test_specify_source_dir_001() {
     let dir = TestDir::new("specify_source_dir_001.in");
     check(
@@ -6460,19 +1731,16 @@ fn test_specify_source_dir_001() {
         expect![[r#"
             moonc build-package ./src/lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./src/lib -target wasm-gc
             moonc build-package ./src/main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources username/hello/main:./src/main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./src/main/moon.pkg.json -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/main:./src/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./src/main/moon.pkg.json -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/main:./src/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
         "#]],
     );
     check(
         get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind blackbox
-            moonc build-package ./src/lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./src/lib -target wasm-gc -g -O0
-            moonc build-package ./src/lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg username/hello/lib_blackbox_test -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources username/hello/lib_blackbox_test:./src/lib -target wasm-gc -g -O0 -blackbox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main username/hello/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./src/lib/moon.pkg.json -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/lib_blackbox_test:./src/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./src/lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./src/lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./src/lib/moon.pkg.json -pkg-sources username/hello/lib:./src/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind blackbox --mode test
+            moonc build-package ./src/lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./src/lib -target wasm-gc -g -O0 -source-map
+            moonc build-package ./src/lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg username/hello/lib_blackbox_test -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources username/hello/lib_blackbox_test:./src/lib -target wasm-gc -g -O0 -source-map -blackbox-test -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main username/hello/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./src/lib/moon.pkg.json -pkg-sources username/hello/lib:./src/lib -pkg-sources username/hello/lib_blackbox_test:./src/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
@@ -6561,7 +1829,8 @@ fn test_specify_source_dir_001() {
                       "deps": [
                         {
                           "path": "username/hello/lib",
-                          "alias": "lib"
+                          "alias": "lib",
+                          "fspath": "$ROOT/src/lib"
                         }
                       ],
                       "wbtest-deps": [],
@@ -6695,8 +1964,8 @@ fn test_specify_source_dir_with_deps() {
         get_stdout(&dir, ["check", "--dry-run", "--sort-input"]),
         expect![[r#"
             moonc check ./anyhow/lib/hello.mbt -o ./target/wasm-gc/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./anyhow/lib -target wasm-gc
-            moonc check ./deps/hello19/source/top.mbt -o ./target/wasm-gc/release/check/.mooncakes/just/hello19/hello19.mi -pkg just/hello19 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19:./deps/hello19/source -target wasm-gc
-            moonc check ./deps/hello19/source/lib/hello.mbt -o ./target/wasm-gc/release/check/.mooncakes/just/hello19/lib/lib.mi -pkg just/hello19/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19/lib:./deps/hello19/source/lib -target wasm-gc
+            moonc check ./deps/hello19/source/top.mbt -w -a -alert -all -o ./target/wasm-gc/release/check/.mooncakes/just/hello19/hello19.mi -pkg just/hello19 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19:./deps/hello19/source -target wasm-gc
+            moonc check ./deps/hello19/source/lib/hello.mbt -w -a -alert -all -o ./target/wasm-gc/release/check/.mooncakes/just/hello19/lib/lib.mi -pkg just/hello19/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19/lib:./deps/hello19/source/lib -target wasm-gc
             moonc check ./anyhow/main/main.mbt -o ./target/wasm-gc/release/check/main/main.mi -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib/lib.mi:emmm -i ./target/wasm-gc/release/check/.mooncakes/just/hello19/hello19.mi:hello19 -i ./target/wasm-gc/release/check/.mooncakes/just/hello19/lib/lib.mi:lib -pkg-sources username/hello/main:./anyhow/main -target wasm-gc
             moonc check ./anyhow/lib/hello_test.mbt -o ./target/wasm-gc/release/check/lib/lib.blackbox_test.mi -pkg username/hello/lib_blackbox_test -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib/lib.mi:lib -pkg-sources username/hello/lib_blackbox_test:./anyhow/lib -target wasm-gc -blackbox-test
         "#]],
@@ -6705,22 +1974,19 @@ fn test_specify_source_dir_with_deps() {
         get_stdout(&dir, ["build", "--dry-run", "--sort-input"]),
         expect![[r#"
             moonc build-package ./anyhow/lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./anyhow/lib -target wasm-gc
-            moonc build-package ./deps/hello19/source/top.mbt -o ./target/wasm-gc/release/build/.mooncakes/just/hello19/hello19.core -pkg just/hello19 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19:./deps/hello19/source -target wasm-gc
-            moonc build-package ./deps/hello19/source/lib/hello.mbt -o ./target/wasm-gc/release/build/.mooncakes/just/hello19/lib/lib.core -pkg just/hello19/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19/lib:./deps/hello19/source/lib -target wasm-gc
+            moonc build-package ./deps/hello19/source/top.mbt -w -a -alert -all -o ./target/wasm-gc/release/build/.mooncakes/just/hello19/hello19.core -pkg just/hello19 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19:./deps/hello19/source -target wasm-gc
+            moonc build-package ./deps/hello19/source/lib/hello.mbt -w -a -alert -all -o ./target/wasm-gc/release/build/.mooncakes/just/hello19/lib/lib.core -pkg just/hello19/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources just/hello19/lib:./deps/hello19/source/lib -target wasm-gc
             moonc build-package ./anyhow/main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:emmm -i ./target/wasm-gc/release/build/.mooncakes/just/hello19/hello19.mi:hello19 -i ./target/wasm-gc/release/build/.mooncakes/just/hello19/lib/lib.mi:lib -pkg-sources username/hello/main:./anyhow/main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/.mooncakes/just/hello19/hello19.core ./target/wasm-gc/release/build/.mooncakes/just/hello19/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./anyhow/main/moon.pkg.json -pkg-sources username/hello/lib:./anyhow/lib -pkg-sources just/hello19:./deps/hello19/source -pkg-sources just/hello19/lib:./deps/hello19/source/lib -pkg-sources username/hello/main:./anyhow/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/.mooncakes/just/hello19/hello19.core ./target/wasm-gc/release/build/.mooncakes/just/hello19/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./anyhow/main/moon.pkg.json -pkg-sources username/hello/lib:./anyhow/lib -pkg-sources just/hello19:./deps/hello19/source -pkg-sources just/hello19/lib:./deps/hello19/source/lib -pkg-sources username/hello/main:./anyhow/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
         "#]],
     );
     check(
         get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind blackbox
-            moonc build-package ./anyhow/lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./anyhow/lib -target wasm-gc -g -O0
-            moonc build-package ./anyhow/lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg username/hello/lib_blackbox_test -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources username/hello/lib_blackbox_test:./anyhow/lib -target wasm-gc -g -O0 -blackbox-test -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main username/hello/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./anyhow/lib/moon.pkg.json -pkg-sources username/hello/lib:./anyhow/lib -pkg-sources username/hello/lib_blackbox_test:./anyhow/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./anyhow/lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg username/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./anyhow/lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main username/hello/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./anyhow/lib/moon.pkg.json -pkg-sources username/hello/lib:./anyhow/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package username/hello/lib --sort-input --target wasm-gc --driver-kind blackbox --mode test
+            moonc build-package ./anyhow/lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib:./anyhow/lib -target wasm-gc -g -O0 -source-map
+            moonc build-package ./anyhow/lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg username/hello/lib_blackbox_test -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources username/hello/lib_blackbox_test:./anyhow/lib -target wasm-gc -g -O0 -source-map -blackbox-test -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main username/hello/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./anyhow/lib/moon.pkg.json -pkg-sources username/hello/lib:./anyhow/lib -pkg-sources username/hello/lib_blackbox_test:./anyhow/lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
@@ -7091,7 +2357,7 @@ fn moon_test_with_failure_json() {
 
 #[test]
 fn test_js() {
-    let dir = TestDir::new("test_filter.in");
+    let dir = TestDir::new("test_filter/test_filter");
 
     let output = get_stdout(
         &dir,
@@ -7138,71 +2404,6 @@ fn test_js() {
             Total tests: 1, passed: 1, failed: 0.
         "#]],
     );
-}
-
-#[test]
-#[ignore]
-fn test_generate_test_driver_incremental() {
-    let dir = TestDir::new("moon_test_hello_lib.in");
-
-    get_stdout(&dir, ["test", "--package", "moonbitlang/hello/lib"]);
-    let driver_file =
-        dir.join("target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt");
-    assert!(driver_file.exists());
-
-    let time_1 = driver_file.metadata().unwrap().modified().unwrap();
-
-    get_stdout(
-        &dir,
-        [
-            "test",
-            "--package",
-            "moonbitlang/hello/lib",
-            "--file",
-            "hello_wbtest.mbt",
-        ],
-    );
-    let time_2 = driver_file.metadata().unwrap().modified().unwrap();
-
-    assert!(time_1 == time_2);
-
-    get_stdout(
-        &dir,
-        [
-            "test",
-            "--package",
-            "moonbitlang/hello/lib",
-            "--file",
-            "hello_wbtest.mbt",
-            "--index",
-            "0",
-        ],
-    );
-    let time_3 = driver_file.metadata().unwrap().modified().unwrap();
-
-    assert!(time_2 == time_3);
-
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(dir.join("lib/hello.mbt"))
-        .unwrap();
-    file.write_all(b"\n").unwrap();
-
-    get_stdout(
-        &dir,
-        [
-            "test",
-            "--package",
-            "moonbitlang/hello/lib",
-            "--file",
-            "hello_wbtest.mbt",
-            "--index",
-            "0",
-        ],
-    );
-    let time_4 = driver_file.metadata().unwrap().modified().unwrap();
-
-    assert!(time_3 != time_4);
 }
 
 #[test]
@@ -7257,7 +2458,7 @@ fn test_moon_doc() {
 
 #[test]
 fn test_failed_to_fill_whole_buffer() {
-    let dir = TestDir::new("hello.in");
+    let dir = TestDir::new("hello");
     check(
         get_stderr(&dir, ["check"]),
         expect![[r#"
@@ -7352,7 +2553,7 @@ pub struct TraceEvent {
 
 #[test]
 fn test_trace_001() {
-    let dir = TestDir::new("hello.in");
+    let dir = TestDir::new("hello");
     let _ = get_stdout(&dir, ["build", "--trace"]);
     let s = replace_dir(&read(dir.join("trace.json")), &dir);
     let j: TraceResult = serde_json::from_str(&s).unwrap();
@@ -7363,7 +2564,7 @@ fn test_trace_001() {
             [
                 "moonbit::build::read",
                 "moonc build-package -error-format json $ROOT/main/main.mbt -o $ROOT/target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources hello/main:$ROOT/main -target wasm-gc",
-                "moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core $ROOT/target/wasm-gc/release/build/main/main.core -main hello/main -o $ROOT/target/wasm-gc/release/build/main/main.wasm -pkg-config-path $ROOT/main/moon.pkg.json -pkg-sources hello/main:$ROOT/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc",
+                "moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core $ROOT/target/wasm-gc/release/build/main/main.core -main hello/main -o $ROOT/target/wasm-gc/release/build/main/main.wasm -pkg-config-path $ROOT/main/moon.pkg.json -pkg-sources hello/main:$ROOT/main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc",
                 "work.run",
                 "main",
             ]"#]],
@@ -7409,7 +2610,7 @@ fn test_pre_build() {
         get_stderr(&dir, ["check"]),
         expect![[r#"
             Executed 3 pre-build tasks, now up to date
-            Warning: [1002]
+            Warning: [0002]
                ╭─[$ROOT/src/lib/a.mbt:4:5]
                │
              4 │ let resource : String =
@@ -7422,7 +2623,7 @@ fn test_pre_build() {
     check(
         get_stderr(&dir, ["build"]),
         expect![[r#"
-            Warning: [1002]
+            Warning: [0002]
                ╭─[$ROOT/src/lib/a.mbt:4:5]
                │
              4 │ let resource : String =
@@ -7627,7 +2828,7 @@ fn test_moonfmt() {
 #[cfg(unix)]
 #[test]
 fn test_use_cc_for_native_release() {
-    let dir = TestDir::new("moon_test_hello_exec_fntest.in");
+    let dir = TestDir::new("moon_test/hello_exec_fntest");
     // build
     {
         check(
@@ -7645,9 +2846,9 @@ fn test_use_cc_for_native_release() {
             expect![[r#"
                 moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moonbitlang/hello/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native
                 moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moonbitlang/hello/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moonbitlang/hello/main:./main -target native
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-                cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/release/build/runtime.o
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/release/build/runtime.o ./target/native/release/build/main/main.c -o ./target/native/release/build/main/main.exe
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+                cc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+                cc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o -lm
             "#]],
         );
         // if --release is not specified, it should not use cc
@@ -7659,9 +2860,9 @@ fn test_use_cc_for_native_release() {
             expect![[r#"
                 moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moonbitlang/hello/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native
                 moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moonbitlang/hello/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moonbitlang/hello/main:./main -target native
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-                cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/release/build/runtime.o
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/release/build/runtime.o ./target/native/release/build/main/main.c -o ./target/native/release/build/main/main.exe
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+                cc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+                cc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o -lm
             "#]],
         );
         check(
@@ -7679,9 +2880,9 @@ fn test_use_cc_for_native_release() {
             expect![[r#"
                 moonc build-package ./lib/hello.mbt -o ./target/native/debug/build/lib/lib.core -pkg moonbitlang/hello/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0
                 moonc build-package ./main/main.mbt -o ./target/native/debug/build/main/main.core -pkg moonbitlang/hello/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/debug/build/lib/lib.mi:lib -pkg-sources moonbitlang/hello/main:./main -target native -g -O0
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/build/lib/lib.core ./target/native/debug/build/main/main.core -main moonbitlang/hello/main -o ./target/native/debug/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native -g -O0
-                cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/debug/build/runtime.o
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/debug/build/runtime.o ./target/native/debug/build/main/main.c -o ./target/native/debug/build/main/main.exe
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/build/lib/lib.core ./target/native/debug/build/main/main.core -main moonbitlang/hello/main -o ./target/native/debug/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native -g -O0
+                cc -o ./target/native/debug/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+                cc -o ./target/native/debug/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -g -fwrapv -fno-strict-aliasing -Og $MOON_HOME/lib/libmoonbitrun.o ./target/native/debug/build/main/main.c ./target/native/debug/build/runtime.o -lm
             "#]],
         );
     }
@@ -7704,9 +2905,9 @@ fn test_use_cc_for_native_release() {
             expect![[r#"
                 moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moonbitlang/hello/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native
                 moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moonbitlang/hello/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moonbitlang/hello/main:./main -target native
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-                cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/release/build/runtime.o
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/release/build/runtime.o ./target/native/release/build/main/main.c -o ./target/native/release/build/main/main.exe
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+                cc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+                cc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o -lm
                 ./target/native/release/build/main/main.exe
             "#]],
         );
@@ -7726,9 +2927,9 @@ fn test_use_cc_for_native_release() {
             expect![[r#"
                 moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moonbitlang/hello/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native
                 moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moonbitlang/hello/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moonbitlang/hello/main:./main -target native
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-                cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/release/build/runtime.o
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/release/build/runtime.o ./target/native/release/build/main/main.c -o ./target/native/release/build/main/main.exe
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moonbitlang/hello/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+                cc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+                cc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o -lm
                 ./target/native/release/build/main/main.exe
             "#]],
         );
@@ -7748,9 +2949,9 @@ fn test_use_cc_for_native_release() {
             expect![[r#"
                 moonc build-package ./lib/hello.mbt -o ./target/native/debug/build/lib/lib.core -pkg moonbitlang/hello/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0
                 moonc build-package ./main/main.mbt -o ./target/native/debug/build/main/main.core -pkg moonbitlang/hello/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/debug/build/lib/lib.mi:lib -pkg-sources moonbitlang/hello/main:./main -target native -g -O0
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/build/lib/lib.core ./target/native/debug/build/main/main.core -main moonbitlang/hello/main -o ./target/native/debug/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native -g -O0
-                cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/debug/build/runtime.o
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/debug/build/runtime.o ./target/native/debug/build/main/main.c -o ./target/native/debug/build/main/main.exe
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/build/lib/lib.core ./target/native/debug/build/main/main.core -main moonbitlang/hello/main -o ./target/native/debug/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native -g -O0
+                cc -o ./target/native/debug/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+                cc -o ./target/native/debug/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -g -fwrapv -fno-strict-aliasing -Og $MOON_HOME/lib/libmoonbitrun.o ./target/native/debug/build/main/main.c ./target/native/debug/build/runtime.o -lm
                 ./target/native/debug/build/main/main.exe
             "#]],
         );
@@ -7771,15 +2972,15 @@ fn test_use_cc_for_native_release() {
                 ],
             ),
             expect![[r#"
-                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind whitebox --release
-                moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/native/release/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/native/release/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -whitebox-test -no-mi
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/native/release/test/lib/lib.whitebox_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native
-                cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/release/test/runtime.o
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/release/test/runtime.o ./target/native/release/test/lib/lib.whitebox_test.c -o ./target/native/release/test/lib/lib.whitebox_test.exe
-                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind internal --release
-                moonc build-package ./lib/hello.mbt ./target/native/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/release/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -no-mi
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/native/release/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native
-                cc -I$MOON_HOME/include -O2 $MOON_HOME/lib/libmoonbitrun.o -fwrapv -fno-strict-aliasing -lm ./target/native/release/test/runtime.o ./target/native/release/test/lib/lib.internal_test.c -o ./target/native/release/test/lib/lib.internal_test.exe
+                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind whitebox --release --mode test
+                moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/native/release/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/native/release/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -whitebox-test -no-mi -test-mode
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/native/release/test/lib/lib.whitebox_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native
+                cc -o ./target/native/release/test/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+                cc -o ./target/native/release/test/lib/lib.whitebox_test.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/test/lib/lib.whitebox_test.c ./target/native/release/test/runtime.o -lm
+                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind internal --release --mode test
+                moonc build-package ./lib/hello.mbt ./target/native/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/release/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -no-mi -test-mode
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/native/release/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native
+                cc -o ./target/native/release/test/lib/lib.internal_test.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/test/lib/lib.internal_test.c ./target/native/release/test/runtime.o -lm
             "#]],
         );
 
@@ -7798,13 +2999,13 @@ fn test_use_cc_for_native_release() {
                 ],
             ),
             expect![[r#"
-                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind whitebox
-                moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/native/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/native/debug/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -whitebox-test -no-mi
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.whitebox_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
-                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind internal
-                moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -no-mi
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
-                cc $MOON_HOME/lib/runtime.c -shared -fPIC -I $MOON_HOME/include -o ./target/native/debug/test/runtime.dylib
+                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind whitebox --mode test
+                moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/native/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/native/debug/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -whitebox-test -no-mi -test-mode
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.whitebox_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
+                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind internal --mode test
+                moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -no-mi -test-mode
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
+                cc -o ./target/native/debug/test/libruntime.dylib -I$MOON_HOME/include -L$MOON_HOME/lib -g -shared -fPIC -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c -lm
             "#]],
         );
         #[cfg(target_os = "linux")]
@@ -7821,13 +3022,13 @@ fn test_use_cc_for_native_release() {
                 ],
             ),
             expect![[r#"
-                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind whitebox
-                moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/native/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/native/debug/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -whitebox-test -no-mi
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.whitebox_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
-                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind internal
-                moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -no-mi
-                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
-                cc $MOON_HOME/lib/runtime.c -shared -fPIC -I $MOON_HOME/include -o ./target/native/debug/test/runtime.so
+                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind whitebox --mode test
+                moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/native/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/native/debug/test/lib/lib.whitebox_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -whitebox-test -no-mi -test-mode
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.whitebox_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.whitebox_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
+                moon generate-test-driver --source-dir . --target-dir ./target --package moonbitlang/hello/lib --sort-input --target native --driver-kind internal --mode test
+                moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moonbitlang/hello/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moonbitlang/hello/lib:./lib -target native -g -O0 -no-mi -test-mode
+                moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moonbitlang/hello/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moonbitlang/hello/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
+                cc -o ./target/native/debug/test/libruntime.so -I$MOON_HOME/include -L$MOON_HOME/lib -g -shared -fPIC -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c -lm
             "#]],
         );
     }
@@ -7867,13 +3068,15 @@ fn test_native_backend_cc_flags() {
             ["build", "--target", "native", "--dry-run", "--sort-input"],
         ),
         expect![[r#"
+            stubcc -o ./target/native/release/build/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
             moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native
             moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target native
-            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-            cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/release/build/runtime.o
-            cc -I$MOON_HOME/include -fwrapv -fno-strict-aliasing ccflags fasd cclinkflags ./target/native/release/build/runtime.o ./target/native/release/build/main/main.c -o ./target/native/release/build/main/main.exe
-            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-            cc -I$MOON_HOME/include -fwrapv -fno-strict-aliasing ccflags fasd cclinkflags ./target/native/release/build/runtime.o ./target/native/release/build/lib/lib.c -o ./target/native/release/build/lib/lib.exe
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            cc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            stubar -r -c -s ./target/native/release/build/lib/liblib.a ./target/native/release/build/lib/stub.o
+            cc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            cc -o ./target/native/release/build/lib/lib.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/lib/lib.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
         "#]],
     );
     // don't pass native cc flags for no native backend
@@ -7885,8 +3088,8 @@ fn test_native_backend_cc_flags() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core -main moon_new/lib -o ./target/wasm-gc/release/build/lib/lib.wasm -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core -main moon_new/lib -o ./target/wasm-gc/release/build/lib/lib.wasm -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
         "#]],
     );
 
@@ -7896,20 +3099,22 @@ fn test_native_backend_cc_flags() {
             ["test", "--target", "native", "--dry-run", "--sort-input"],
         ),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target native --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
-            cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/debug/test/runtime.o
-            cc -I$MOON_HOME/include -fwrapv -fno-strict-aliasing ccflags fasd cclinkflags ./target/native/debug/test/runtime.o ./target/native/debug/test/lib/lib.internal_test.c -o ./target/native/debug/test/lib/lib.internal_test.exe
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target native --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native -g -O0 -no-mi -test-mode
+            stubcc -o ./target/native/debug/test/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
+            cc -o ./target/native/debug/test/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            stubar -r -c -s ./target/native/debug/test/lib/liblib.a ./target/native/debug/test/lib/stub.o
+            cc -o ./target/native/debug/test/lib/lib.internal_test.exe -I$MOON_HOME/include -L$MOON_HOME/lib -g -fwrapv -fno-strict-aliasing $MOON_HOME/lib/libmoonbitrun.o ./target/native/debug/test/lib/lib.internal_test.c ./target/native/debug/test/runtime.o ./target/native/debug/test/lib/liblib.a -lm ccflags fasd cclinkflags
         "#]],
     );
     // don't pass native cc flags for no native backend
     check(
         get_stdout(&dir, ["test", "--target", "wasm", "--dry-run"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -pkg-sources moon_new/lib:./lib -target wasm -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -pkg-sources moon_new/lib:./lib -target wasm -g -O0 -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm -g -O0
         "#]],
     );
 
@@ -7926,13 +3131,15 @@ fn test_native_backend_cc_flags() {
             ],
         ),
         expect![[r#"
+            stubcc -o ./target/native/release/build/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
             moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native
             moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target native
-            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-            cc -c $MOON_HOME/lib/runtime.c -I $MOON_HOME/include -o ./target/native/release/build/runtime.o
-            cc -I$MOON_HOME/include -fwrapv -fno-strict-aliasing ccflags fasd cclinkflags ./target/native/release/build/runtime.o ./target/native/release/build/main/main.c -o ./target/native/release/build/main/main.exe
-            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
-            cc -I$MOON_HOME/include -fwrapv -fno-strict-aliasing ccflags fasd cclinkflags ./target/native/release/build/runtime.o ./target/native/release/build/lib/lib.c -o ./target/native/release/build/lib/lib.exe
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            cc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            stubar -r -c -s ./target/native/release/build/lib/liblib.a ./target/native/release/build/lib/stub.o
+            cc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            cc -o ./target/native/release/build/lib/lib.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/lib/lib.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
             ./target/native/release/build/lib/lib.exe
             ./target/native/release/build/main/main.exe
         "#]],
@@ -7953,10 +3160,217 @@ fn test_native_backend_cc_flags() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -pkg-sources moon_new/lib:./lib -target wasm
             moonc build-package ./main/main.mbt -o ./target/wasm/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm/release/bundle -i ./target/wasm/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm
-            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core ./target/wasm/release/build/main/main.core -main moon_new/main -o ./target/wasm/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm
-            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core -main moon_new/lib -o ./target/wasm/release/build/lib/lib.wasm -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm
+            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core ./target/wasm/release/build/main/main.core -main moon_new/main -o ./target/wasm/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm
+            moonc link-core $MOON_HOME/lib/core/target/wasm/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm/release/bundle/core.core ./target/wasm/release/build/lib/lib.core -main moon_new/lib -o ./target/wasm/release/build/lib/lib.wasm -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm
             moonrun ./target/wasm/release/build/lib/lib.wasm
             moonrun ./target/wasm/release/build/main/main.wasm
+        "#]],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_native_backend_cc_flags_with_env_override() {
+    let dir = TestDir::new("native_backend_cc_flags.in");
+    check(
+        get_stdout_with_envs(
+            &dir,
+            ["build", "--target", "native", "--dry-run", "--sort-input"],
+            [("MOON_CC", "x86_64-unknown-fake_os-fake_libc-gcc")],
+        ),
+        expect![[r#"
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native
+            moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target native
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            x86_64-unknown-fake_os-fake_libc-ar -r -c -s ./target/native/release/build/lib/liblib.a ./target/native/release/build/lib/stub.o
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/lib.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/lib/lib.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+        "#]],
+    );
+
+    check(
+        get_stdout_with_envs(
+            &dir,
+            ["test", "--target", "native", "--dry-run", "--sort-input"],
+            [("MOON_CC", "x86_64-unknown-fake_os-fake_libc-gcc")],
+        ),
+        expect![[r#"
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target native --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native -g -O0 -no-mi -test-mode
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/debug/test/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/debug/test/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            x86_64-unknown-fake_os-fake_libc-ar -r -c -s ./target/native/debug/test/lib/liblib.a ./target/native/debug/test/lib/stub.o
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/debug/test/lib/lib.internal_test.exe -I$MOON_HOME/include -L$MOON_HOME/lib -g -fwrapv -fno-strict-aliasing ./target/native/debug/test/lib/lib.internal_test.c ./target/native/debug/test/runtime.o ./target/native/debug/test/lib/liblib.a -lm ccflags fasd cclinkflags
+        "#]],
+    );
+
+    check(
+        get_stdout_with_envs(
+            &dir,
+            [
+                "run",
+                "main",
+                "--target",
+                "native",
+                "--dry-run",
+                "--sort-input",
+            ],
+            [("MOON_CC", "x86_64-unknown-fake_os-fake_libc-gcc")],
+        ),
+        expect![[r#"
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native
+            moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target native
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            x86_64-unknown-fake_os-fake_libc-ar -r -c -s ./target/native/release/build/lib/liblib.a ./target/native/release/build/lib/stub.o
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/lib.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/lib/lib.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            ./target/native/release/build/lib/lib.exe
+            ./target/native/release/build/main/main.exe
+        "#]],
+    );
+
+    check(
+        get_stdout_with_envs(
+            &dir,
+            ["build", "--target", "native", "--dry-run", "--sort-input"],
+            [
+                (
+                    "MOON_CC",
+                    "/some/path/A/x86_64-unknown-fake_os-fake_libc-gcc",
+                ),
+                (
+                    "MOON_AR",
+                    "/other/path/B/x86_64-unknown-fake_os-fake_libc-ar",
+                ),
+            ],
+        ),
+        expect![[r#"
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native
+            moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target native
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            /other/path/B/x86_64-unknown-fake_os-fake_libc-ar -r -c -s ./target/native/release/build/lib/liblib.a ./target/native/release/build/lib/stub.o
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/lib.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/lib/lib.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+        "#]],
+    );
+
+    check(
+        get_stdout_with_envs(
+            &dir,
+            ["test", "--target", "native", "--dry-run", "--sort-input"],
+            [
+                (
+                    "MOON_CC",
+                    "/some/path/A/x86_64-unknown-fake_os-fake_libc-gcc",
+                ),
+                (
+                    "MOON_AR",
+                    "/other/path/B/x86_64-unknown-fake_os-fake_libc-ar",
+                ),
+            ],
+        ),
+        expect![[r#"
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target native --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/native/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/native/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native -g -O0 -no-mi -test-mode
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/debug/test/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/native/debug/test/lib/lib.internal_test.c -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target native -g -O0
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/debug/test/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            /other/path/B/x86_64-unknown-fake_os-fake_libc-ar -r -c -s ./target/native/debug/test/lib/liblib.a ./target/native/debug/test/lib/stub.o
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/debug/test/lib/lib.internal_test.exe -I$MOON_HOME/include -L$MOON_HOME/lib -g -fwrapv -fno-strict-aliasing ./target/native/debug/test/lib/lib.internal_test.c ./target/native/debug/test/runtime.o ./target/native/debug/test/lib/liblib.a -lm ccflags fasd cclinkflags
+        "#]],
+    );
+
+    check(
+        get_stdout_with_envs(
+            &dir,
+            [
+                "run",
+                "main",
+                "--target",
+                "native",
+                "--dry-run",
+                "--sort-input",
+            ],
+            [
+                (
+                    "MOON_CC",
+                    "/some/path/A/x86_64-unknown-fake_os-fake_libc-gcc",
+                ),
+                (
+                    "MOON_AR",
+                    "/other/path/B/x86_64-unknown-fake_os-fake_libc-ar",
+                ),
+            ],
+        ),
+        expect![[r#"
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native
+            moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target native
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            /other/path/B/x86_64-unknown-fake_os-fake_libc-ar -r -c -s ./target/native/release/build/lib/liblib.a ./target/native/release/build/lib/stub.o
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core -main moon_new/lib -o ./target/native/release/build/lib/lib.c -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            /some/path/A/x86_64-unknown-fake_os-fake_libc-gcc -o ./target/native/release/build/lib/lib.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing ./target/native/release/build/lib/lib.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm ccflags fasd cclinkflags
+            ./target/native/release/build/lib/lib.exe
+            ./target/native/release/build/main/main.exe
+        "#]],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_native_backend_tcc_run() {
+    let dir = TestDir::new("native_backend_tcc_run.in");
+    check(
+        get_stdout(
+            &dir,
+            ["build", "--target", "native", "--dry-run", "--sort-input"],
+        ),
+        expect![[r#"
+            stubcc -o ./target/native/release/build/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -c -fwrapv -fno-strict-aliasing ./lib/stub.c stubccflags
+            moonc build-package ./lib/hello.mbt -o ./target/native/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/native/release/bundle -pkg-sources moon_new/lib:./lib -target native
+            moonc build-package ./main/main.mbt -o ./target/native/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/native/release/bundle -i ./target/native/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target native
+            moonc link-core $MOON_HOME/lib/core/target/native/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/native/release/bundle/core.core ./target/native/release/build/lib/lib.core ./target/native/release/build/main/main.core -main moon_new/main -o ./target/native/release/build/main/main.c -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target native
+            cc -o ./target/native/release/build/runtime.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c
+            stubar -r -c -s ./target/native/release/build/lib/liblib.a ./target/native/release/build/lib/stub.o
+            cc -o ./target/native/release/build/main/main.exe -I$MOON_HOME/include -L$MOON_HOME/lib -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/libmoonbitrun.o ./target/native/release/build/main/main.c ./target/native/release/build/runtime.o ./target/native/release/build/lib/liblib.a -lm
+        "#]],
+    );
+
+    #[cfg(target_os = "macos")]
+    check(
+        get_stdout(
+            &dir,
+            ["test", "--target", "native", "--dry-run", "--sort-input"],
+        ),
+        expect![[r#"
+            stubcc -o ./target/native/debug/test/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -fPIC -DMOONBIT_USE_SHARED_RUNTIME ./lib/stub.c stubccflags
+            cc -o ./target/native/debug/test/libruntime.dylib -I$MOON_HOME/include -L$MOON_HOME/lib -g -shared -fPIC -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c -lm
+            stubcc -o ./target/native/debug/test/lib/liblib.dylib -L$MOON_HOME/lib -L./target/native/debug/test -shared -fPIC ./target/native/debug/test/lib/stub.o -lm -lruntime -Wl,-rpath,./target/native/debug/test stubcclinkflags
+        "#]],
+    );
+
+    #[cfg(target_os = "linux")]
+    check(
+        get_stdout(
+            &dir,
+            ["test", "--target", "native", "--dry-run", "--sort-input"],
+        ),
+        expect![[r#"
+            stubcc -o ./target/native/debug/test/lib/stub.o -I$MOON_HOME/include -L$MOON_HOME/lib -g -c -fwrapv -fno-strict-aliasing -fPIC -DMOONBIT_USE_SHARED_RUNTIME ./lib/stub.c stubccflags
+            cc -o ./target/native/debug/test/libruntime.so -I$MOON_HOME/include -L$MOON_HOME/lib -g -shared -fPIC -fwrapv -fno-strict-aliasing -O2 $MOON_HOME/lib/runtime.c -lm
+            stubcc -o ./target/native/debug/test/lib/liblib.so -L$MOON_HOME/lib -L./target/native/debug/test -shared -fPIC ./target/native/debug/test/lib/stub.o -lm -lruntime -Wl,-rpath,./target/native/debug/test stubcclinkflags
         "#]],
     );
 }
@@ -7966,7 +3380,7 @@ fn test_moon_check_filter_package() {
     let dir = TestDir::new("test_check_filter.in");
 
     check(
-        get_stdout(&dir, ["check", "A", "--dry-run", "--sort-input"]),
+        get_stdout(&dir, ["check", "-p", "A", "--dry-run", "--sort-input"]),
         expect![[r#"
             moonc check ./A/hello.mbt ./A/test.mbt -o ./target/wasm-gc/release/check/A/A.mi -pkg username/hello/A -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/A:./A -target wasm-gc
             moonc check ./A/hello_test.mbt -o ./target/wasm-gc/release/check/A/A.blackbox_test.mi -pkg username/hello/A_blackbox_test -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/A/A.mi:A -pkg-sources username/hello/A_blackbox_test:./A -target wasm-gc -blackbox-test
@@ -7975,7 +3389,7 @@ fn test_moon_check_filter_package() {
     );
 
     check(
-        get_stdout(&dir, ["check", "main", "--dry-run", "--sort-input"]),
+        get_stdout(&dir, ["check", "-p", "main", "--dry-run", "--sort-input"]),
         expect![[r#"
             moonc check ./lib2/lib.mbt -o ./target/wasm-gc/release/check/lib2/lib2.mi -pkg username/hello/lib2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib2:./lib2 -target wasm-gc
             moonc check ./lib/hello.mbt -o ./target/wasm-gc/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib2/lib2.mi:lib2 -pkg-sources username/hello/lib:./lib -target wasm-gc
@@ -7984,7 +3398,7 @@ fn test_moon_check_filter_package() {
     );
 
     check(
-        get_stdout(&dir, ["check", "lib", "--dry-run", "--sort-input"]),
+        get_stdout(&dir, ["check", "-p", "lib", "--dry-run", "--sort-input"]),
         expect![[r#"
             moonc check ./lib2/lib.mbt -o ./target/wasm-gc/release/check/lib2/lib2.mi -pkg username/hello/lib2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib2:./lib2 -target wasm-gc
             moonc check ./lib/hello.mbt -o ./target/wasm-gc/release/check/lib/lib.mi -pkg username/hello/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/lib2/lib2.mi:lib2 -pkg-sources username/hello/lib:./lib -target wasm-gc
@@ -8002,6 +3416,7 @@ fn test_moon_check_package_with_patch() {
             &dir,
             [
                 "check",
+                "-p",
                 "A",
                 "--patch-file",
                 "/path/to/patch.json",
@@ -8020,6 +3435,7 @@ fn test_moon_check_package_with_patch() {
             &dir,
             [
                 "check",
+                "-p",
                 "A",
                 "--patch-file",
                 "/path/to/patch_wbtest.json",
@@ -8038,6 +3454,7 @@ fn test_moon_check_package_with_patch() {
             &dir,
             [
                 "check",
+                "-p",
                 "A",
                 "--patch-file",
                 "/path/to/patch_test.json",
@@ -8058,6 +3475,7 @@ fn test_moon_check_package_with_patch() {
             &dir,
             [
                 "check",
+                "-p",
                 "lib",
                 "--patch-file",
                 "/path/to/patch.json",
@@ -8075,6 +3493,7 @@ fn test_moon_check_package_with_patch() {
             &dir,
             [
                 "check",
+                "-p",
                 "lib",
                 "--patch-file",
                 "/path/to/patch_test.json",
@@ -8094,6 +3513,7 @@ fn test_moon_check_package_with_patch() {
             &dir,
             [
                 "check",
+                "-p",
                 "main",
                 "--patch-file",
                 "/path/to/patch.json",
@@ -8127,7 +3547,7 @@ fn test_no_mi_for_test_pkg() {
 
 #[test]
 fn test_moon_test_patch() {
-    let dir = TestDir::new("moon_test_patch.in");
+    let dir = TestDir::new("moon_test/patch");
     check(
         get_stdout(
             &dir,
@@ -8145,16 +3565,16 @@ fn test_moon_test_patch() {
             ],
         ),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind blackbox
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg moon_new/lib -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0
-            moonc build-package ./lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg moon_new/lib_blackbox_test -is-main -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources moon_new/lib_blackbox_test:./lib -target wasm-gc -g -O0 -blackbox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main moon_new/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/lib_blackbox_test:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind internal --patch-file ./patch.json
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -no-mi -patch-file ./patch.json
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind blackbox --mode test
+            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg moon_new/lib -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map
+            moonc build-package ./lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg moon_new/lib_blackbox_test -is-main -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources moon_new/lib_blackbox_test:./lib -target wasm-gc -g -O0 -source-map -blackbox-test -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main moon_new/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/lib_blackbox_test:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind whitebox --mode test
+            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -whitebox-test -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind internal --patch-file ./patch.json --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -patch-file ./patch.json -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
@@ -8194,16 +3614,16 @@ fn test_moon_test_patch() {
             ],
         ),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind blackbox
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg moon_new/lib -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0
-            moonc build-package ./lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg moon_new/lib_blackbox_test -is-main -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources moon_new/lib_blackbox_test:./lib -target wasm-gc -g -O0 -blackbox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main moon_new/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/lib_blackbox_test:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind whitebox --patch-file ./patch_wbtest.json
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -whitebox-test -no-mi -patch-file ./patch_wbtest.json
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind blackbox --mode test
+            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg moon_new/lib -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map
+            moonc build-package ./lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg moon_new/lib_blackbox_test -is-main -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources moon_new/lib_blackbox_test:./lib -target wasm-gc -g -O0 -source-map -blackbox-test -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main moon_new/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/lib_blackbox_test:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind whitebox --patch-file ./patch_wbtest.json --mode test
+            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -whitebox-test -no-mi -patch-file ./patch_wbtest.json -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
@@ -8243,16 +3663,16 @@ fn test_moon_test_patch() {
             ],
         ),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind blackbox --patch-file ./patch_test.json
-            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg moon_new/lib -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0
-            moonc build-package ./lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg moon_new/lib_blackbox_test -is-main -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources moon_new/lib_blackbox_test:./lib -target wasm-gc -g -O0 -blackbox-test -no-mi -patch-file ./patch_test.json
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main moon_new/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/lib_blackbox_test:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind whitebox
-            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -whitebox-test -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind blackbox --patch-file ./patch_test.json --mode test
+            moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/test/lib/lib.core -pkg moon_new/lib -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map
+            moonc build-package ./lib/hello_test.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_blackbox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -pkg moon_new/lib_blackbox_test -is-main -i ./target/wasm-gc/debug/test/lib/lib.mi:lib -pkg-sources moon_new/lib_blackbox_test:./lib -target wasm-gc -g -O0 -source-map -blackbox-test -no-mi -patch-file ./patch_test.json -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.core ./target/wasm-gc/debug/test/lib/lib.blackbox_test.core -main moon_new/lib_blackbox_test -o ./target/wasm-gc/debug/test/lib/lib.blackbox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/lib_blackbox_test:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind whitebox --mode test
+            moonc build-package ./lib/hello.mbt ./lib/hello_wbtest.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_whitebox_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -whitebox-test -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.whitebox_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.whitebox_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --sort-input --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
@@ -8318,11 +3738,14 @@ fn test_moon_test_patch() {
 
 #[test]
 fn test_render_diagnostic_in_patch_file() {
-    let dir = TestDir::new("moon_test_patch.in");
+    let dir = TestDir::new("moon_test/patch");
     check(
-        get_stderr(&dir, ["check", "lib", "--patch-file", "./patch_test.json"]),
+        get_stderr(
+            &dir,
+            ["check", "-p", "lib", "--patch-file", "./patch_test.json"],
+        ),
         expect![[r#"
-            Warning: [1002]
+            Warning: [0002]
                ╭─[hello_2_test.mbt:2:6]
                │
              2 │  let unused_in_patch_test_json = 1;
@@ -8335,10 +3758,10 @@ fn test_render_diagnostic_in_patch_file() {
     check(
         get_stderr(
             &dir,
-            ["check", "lib", "--patch-file", "./patch_wbtest.json"],
+            ["check", "-p", "lib", "--patch-file", "./patch_wbtest.json"],
         ),
         expect![[r#"
-            Warning: [1002]
+            Warning: [0002]
                ╭─[hello_1_wbtest.mbt:2:6]
                │
              2 │  let unused_in_patch_wbtest_json = 1;
@@ -8349,9 +3772,9 @@ fn test_render_diagnostic_in_patch_file() {
         "#]],
     );
     check(
-        get_stderr(&dir, ["check", "lib", "--patch-file", "./patch.json"]),
+        get_stderr(&dir, ["check", "-p", "lib", "--patch-file", "./patch.json"]),
         expect![[r#"
-            Warning: [1002]
+            Warning: [0002]
                ╭─[hello_0.mbt:2:6]
                │
              2 │  let unused_in_patch_json = 1;
@@ -8368,6 +3791,7 @@ fn test_render_diagnostic_in_patch_file() {
             &dir,
             [
                 "check",
+                "-p",
                 "lib",
                 "--patch-file",
                 "./patch_test.json",
@@ -8375,7 +3799,7 @@ fn test_render_diagnostic_in_patch_file() {
             ],
         ),
         expect![[r#"
-            Warning: # E1002
+            Warning: # E0002
 
             Unused variable.
 
@@ -8540,7 +3964,7 @@ fn test_run_doc_test() {
             b"/x54/x00/x65/x00/x73/x00/x74/x00"
             ----
 
-            Total tests: 13, passed: 8, failed: 5.
+            Total tests: 15, passed: 10, failed: 5.
         "#]],
     );
 
@@ -8568,7 +3992,7 @@ fn test_run_doc_test() {
             test block 2
             test block 2
             test username/hello/lib/greet.mbt::3 failed: FAILED: $ROOT/src/lib/greet.mbt:31:7-31:31 another failure
-            Total tests: 13, passed: 11, failed: 2.
+            Total tests: 15, passed: 13, failed: 2.
         "#]],
     );
 
@@ -8684,7 +4108,7 @@ fn test_strip_debug() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
         "#]],
     );
     check(
@@ -8692,7 +4116,7 @@ fn test_strip_debug() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm-gc -g
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -g
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -g
         "#]],
     );
     check(
@@ -8700,7 +4124,7 @@ fn test_strip_debug() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -O0 -source-map
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/debug/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm-gc -O0 -source-map
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main moon_new/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -O0 -source-map
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main moon_new/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -O0 -source-map
         "#]],
     );
     check(
@@ -8708,7 +4132,7 @@ fn test_strip_debug() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/debug/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm-gc -g -O0 -source-map
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main moon_new/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -g -O0 -source-map
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main moon_new/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
@@ -8716,48 +4140,48 @@ fn test_strip_debug() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/debug/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/debug/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm-gc -g -O0 -source-map
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main moon_new/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -g -O0 -source-map
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/build/lib/lib.core ./target/wasm-gc/debug/build/main/main.core -main moon_new/main -o ./target/wasm-gc/debug/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc -g -O0 -source-map
         "#]],
     );
 
     check(
         get_stdout(&dir, ["test", "--dry-run"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
         get_stdout(&dir, ["test", "--debug", "--dry-run"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
     check(
         get_stdout(&dir, ["test", "--release", "--dry-run"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal --release
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/release/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/release/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal --release --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/release/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/release/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -source-map
         "#]],
     );
     check(
         get_stdout(&dir, ["test", "--release", "--no-strip", "--dry-run"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal --release
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/release/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/release/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal --release --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/release/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/release/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/release/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -source-map
         "#]],
     );
     check(
         get_stdout(&dir, ["test", "--debug", "--no-strip", "--dry-run"]),
         expect![[r#"
-            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal
-            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/lib --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./lib/hello.mbt ./target/wasm-gc/debug/test/lib/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/lib/lib.internal_test.core -pkg moon_new/lib -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/lib/lib.internal_test.core -main moon_new/lib -o ./target/wasm-gc/debug/test/lib/lib.internal_test.wasm -test-mode -pkg-config-path ./lib/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
         "#]],
     );
 }
@@ -8780,7 +4204,7 @@ fn test_tracing_value() {
         expect![[r#"
             moonc build-package ./lib/hello.mbt -o ./target/wasm-gc/release/build/lib/lib.core -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/lib:./lib -target wasm-gc
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib/lib.mi:lib -pkg-sources moon_new/main:./main -target wasm-gc -enable-value-tracing
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/lib/lib.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/lib:./lib -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
             moonrun ./target/wasm-gc/release/build/main/main.wasm
         "#]],
     );
@@ -8809,7 +4233,7 @@ fn test_tracing_value() {
         ),
         expect![[r#"
             moonc build-package $ROOT/main.mbt -o $ROOT/target/main.core -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -is-main -pkg moon/run/single -g -O0 -source-map -target wasm-gc -enable-value-tracing
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core $ROOT/target/main.core -o $ROOT/target/main.wasm -pkg-sources moon/run/single:$ROOT -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core $ROOT/target/main.core -o $ROOT/target/main.wasm -pkg-sources moon/run/single:$ROOT -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -g -O0 -source-map -target wasm-gc
             moonrun $ROOT/target/main.wasm
         "#]],
     );
@@ -8842,13 +4266,19 @@ fn test_diff_mbti() {
 
 #[test]
 fn moon_info_specific_package() {
-    let dir = TestDir::new("moon_new.in");
+    let dir = TestDir::new("moon_new/plain");
+
+    // exact match
     get_stdout(&dir, ["info", "--package", "moon_new/main"]);
-    assert!(dir.join("main/main.mbt").exists());
-    assert!(!dir.join("lib/lib.mbt").exists());
+    assert!(dir.join("main/main.mbti").exists());
+    assert!(!dir.join("lib/lib.mbti").exists());
+
+    // fuzzy match
+    get_stdout(&dir, ["info", "--package", "lib"]);
+    assert!(dir.join("lib/lib.mbti").exists());
 
     let content = get_err_stderr(&dir, ["info", "--package", "moon_new/does_not_exist"]);
-    assert!(content.contains("package `moon_new/does_not_exist` not found, make sure you have spelled it correctly, e.g. `moonbitlang/core/hashmap`"));
+    assert!(content.contains("package `moon_new/does_not_exist` not found, make sure you have spelled it correctly, e.g. `moonbitlang/core/hashmap`(exact match) or `hashmap`(fuzzy match)"));
 }
 
 #[test]
@@ -8892,14 +4322,14 @@ fn test_diag_loc_map() {
         get_err_stderr(&dir, ["check"]),
         expect![[r#"
             Error: [4014]
-                ╭─[$ROOT/parser.mbty:25:37]
-                │
-             25 │   : lhs=add "+" rhs=factor  { lhs + "x" + rhs }
-                │                                     ─┬─  
-                │                                      ╰─── Expr Type Mismatch
+                 ╭─[$ROOT/parser.mbt:128:13]
+                 │
+             128 │       lhs + "x" + rhs
+                 │             ─┬─  
+                 │              ╰─── Expr Type Mismatch
                     has type : String
                     wanted   : Int
-            ────╯
+            ─────╯
             error: failed when checking
         "#]],
     );
@@ -8913,7 +4343,7 @@ fn test_dont_link_third_party() {
         get_stdout(&dir, ["build", "--dry-run", "--sort-input"]),
         expect![[r#"
             moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources hello/main:./main -target wasm-gc
-            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/main/main.core -main hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
         "#]],
     );
 }
@@ -8956,14 +4386,14 @@ fn test_update_expect_failed() {
         expect![[r#"
             ///|
             test {
-              inspect!("\x0b", content="\x0b")
-              inspect!("a\x0b", content="a\x0b")
-              inspect!("a\x00b", content="a\x00b")
-              inspect!("a\x00b\x19", content="a\x00b\x19")
+              inspect!("\x0b", content="\u{b}")
+              inspect!("a\x0b", content="a\u{b}")
+              inspect!("a\x00b", content="a\u{0}b")
+              inspect!("a\x00b\x19", content="a\u{0}b\u{19}")
               inspect!("\na\n\x00\nb\n\x19", content=
-                "\x0aa\x0a\x00\x0ab\x0a\x19")
+                "\u{a}a\u{a}\u{0}\u{a}b\u{a}\u{19}")
               inspect!("\n\"a\n\x00\nb\"\n\x19", content=
-                "\x0a\"a\x0a\x00\x0ab\"\x0a\x19")
+                "\u{a}\"a\u{a}\u{0}\u{a}b\"\u{a}\u{19}")
             }
 
             ///|
@@ -8976,7 +4406,7 @@ fn test_update_expect_failed() {
                 #|c"
               )
               inspect!("\x0b\"a\nb\nc\"", content=
-                "\x0b\"a\x0ab\x0ac\"")
+                "\u{b}\"a\u{a}b\u{a}c\"")
             }
         "#]],
     );
@@ -9041,20 +4471,49 @@ fn test_run_md_test() {
     let dir = TestDir::new("run_md_test.in");
 
     check(
-        get_err_stdout(&dir, ["test", "--md", "--sort-input"]),
+        get_stderr(&dir, ["check", "--sort-input"]),
         expect![[r#"
+            Warning: [0002]
+                ╭─[$ROOT/src/lib/1.mbt.md:42:9]
+                │
+             42 │     let a = 1
+                │         ┬  
+                │         ╰── Warning: Unused variable 'a'
+            ────╯
+            Finished. moon: ran 3 tasks, now up to date
+        "#]],
+    );
+
+    check(
+        get_err_stdout(&dir, ["test", "--sort-input"]),
+        expect![[r#"
+            hello from hello_test.mbt
+            fn in md test
+            hello from hello_test.mbt
             Hello, world 1!
-            Hello, world 1!
+            Hello, world 3!
+            ```moonbit
+            fn main {
+              println("Hello")
+            }
+            ```
             Hello, world 2!
+            test username/hello/lib/hello_test.mbt::inspect in bbtest failed
+            expect test failed at $ROOT/src/lib/hello_test.mbt:12:3-12:32
+            Diff:
+            ----
+            inspect in bbtest
+            ----
+
             test username/hello/lib/1.mbt.md::2 failed
-            expect test failed at $ROOT/src/lib/1.mbt.md:21:11-21:27
+            expect test failed at $ROOT/src/lib/1.mbt.md:44:5-44:21
             Diff:
             ----
             4234
             ----
 
-            test username/hello/lib/1.mbt.md::md_test 1.mbt.md 29 10 failed
-            expect test failed at $ROOT/src/lib/1.mbt.md:38:3-38:14
+            test username/hello/lib/1.mbt.md::3 failed
+            expect test failed at $ROOT/src/lib/1.mbt.md:61:5-61:16
             Diff:
             ----
              all
@@ -9065,22 +4524,64 @@ fn test_run_md_test() {
 
             ----
 
-            Total tests: 5, passed: 3, failed: 2.
+            Total tests: 7, passed: 4, failed: 3.
+        "#]],
+    );
+
+    // test filter in md test
+    check(
+        get_stdout(
+            &dir,
+            [
+                "test",
+                "--sort-input",
+                "-p",
+                "lib",
+                "-f",
+                "1.mbt.md",
+                "-i",
+                "1",
+            ],
+        ),
+        expect![[r#"
+            Hello, world 3!
+            Total tests: 1, passed: 1, failed: 0.
         "#]],
     );
 
     check(
-        get_stdout(&dir, ["test", "--md", "--update", "--sort-input"]),
+        get_stdout(&dir, ["test", "--update", "--sort-input"]),
         expect![[r#"
+            hello from hello_test.mbt
+            fn in md test
+            hello from hello_test.mbt
             Hello, world 1!
-            Hello, world 1!
+            Hello, world 3!
+            ```moonbit
+            fn main {
+              println("Hello")
+            }
+            ```
             Hello, world 2!
 
             Auto updating expect tests and retesting ...
 
+            fn in md test
+            fn in md test
+            fn in md test
+            ```moonbit
+            fn main {
+              println("Hello")
+            }
+            ```
             Hello, world 2!
+            ```moonbit
+            fn main {
+              println("Hello")
+            }
+            ```
             Hello, world 2!
-            Total tests: 5, passed: 5, failed: 0.
+            Total tests: 7, passed: 7, failed: 0.
         "#]],
     );
 
@@ -9201,7 +4702,8 @@ fn test_run_md_test() {
                       "deps": [
                         {
                           "path": "username/hello/lib",
-                          "alias": "lib"
+                          "alias": "lib",
+                          "fspath": "$ROOT/src/lib"
                         }
                       ],
                       "wbtest-deps": [],
@@ -9421,4 +4923,422 @@ fn test_upgrade() -> anyhow::Result<()> {
     ];
     check(format!("{:?}", xs), expect!["[true, true]"]);
     Ok(())
+}
+
+#[test]
+fn test_no_warn_deps() {
+    let dir = TestDir::new("no_warn_deps.in");
+    let dir = dir.join("user.in");
+
+    check(
+        get_stderr(&dir, ["check"]),
+        expect![[r#"
+            Finished. moon: ran 4 tasks, now up to date
+        "#]],
+    );
+    check(
+        get_stderr(&dir, ["check", "--deny-warn"]),
+        expect![[r#"
+            Finished. moon: ran 4 tasks, now up to date
+        "#]],
+    );
+    check(
+        get_stderr(&dir, ["build"]),
+        expect![[r#"
+            Finished. moon: ran 3 tasks, now up to date
+        "#]],
+    );
+}
+
+#[test]
+fn test_postadd_script() {
+    if std::env::var("CI").is_err() {
+        return;
+    }
+    let dir = TestDir::new("test_postadd_script.in");
+    let output = get_stdout(&dir, ["add", "lijunchen/test_postadd"]);
+    assert!(output.contains(".mooncakes/lijunchen/test_postadd"));
+
+    let _ = get_stdout(&dir, ["remove", "lijunchen/test_postadd"]);
+
+    let out = std::process::Command::new(moon_bin())
+        .current_dir(&dir)
+        .env("MOON_IGNORE_POSTADD", "1")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .args(["add", "lijunchen/test_postadd"])
+        .output()
+        .unwrap();
+    let out = String::from_utf8(out.stderr).unwrap();
+    assert!(!out.contains(".mooncakes/lijunchen/test_postadd"));
+}
+
+#[test]
+fn test_ambiguous_pkg() {
+    let dir = TestDir::new("ambiguous_pkg.in");
+    check(
+        get_err_stderr(&dir, ["build"]),
+        expect![[r#"
+            error: Ambiguous package name: my/name/is/ambiguous
+            Candidates:
+              ambiguous in my/name/is ($ROOT/deps/ambiguous/src/ambiguous)
+              is/ambiguous in my/name ($ROOT/src/is/ambiguous)
+        "#]],
+    );
+}
+
+#[test]
+fn test_virtual_pkg() {
+    let dir = TestDir::new("virtual_pkg");
+
+    let virtual_pkg = dir.join("virtual");
+
+    check(
+        get_stdout(&virtual_pkg, ["run", "main", "--dry-run"]),
+        expect![[r#"
+            moonc build-package ./dummy_lib/hello.mbt -o ./target/wasm-gc/release/build/dummy_lib/dummy_lib.core -pkg username/hello/dummy_lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/dummy_lib:./dummy_lib -target wasm-gc
+            moonc build-interface ./lib1/lib1.mbti -o ./target/wasm-gc/release/build/lib1/lib1.mi -pkg username/hello/lib1 -pkg-sources username/hello/lib1:./lib1 -virtual -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -error-format=json
+            moonc build-interface ./lib3/lib3.mbti -o ./target/wasm-gc/release/build/lib3/lib3.mi -pkg username/hello/lib3 -pkg-sources username/hello/lib3:./lib3 -virtual -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -error-format=json
+            moonc build-package ./lib2/hello.mbt -o ./target/wasm-gc/release/build/lib2/lib2.core -pkg username/hello/lib2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/dummy_lib/dummy_lib.mi:dummy_lib -pkg-sources username/hello/lib2:./lib2 -target wasm-gc -check-mi ./target/wasm-gc/release/build/lib1/lib1.mi -impl-virtual -no-mi -pkg-sources username/hello/lib1:./lib1
+            moonc build-package ./lib4/hello.mbt -o ./target/wasm-gc/release/build/lib4/lib4.core -pkg username/hello/lib4 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources username/hello/lib4:./lib4 -target wasm-gc -check-mi ./target/wasm-gc/release/build/lib3/lib3.mi -impl-virtual -no-mi -pkg-sources username/hello/lib3:./lib3
+            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg username/hello/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/lib1/lib1.mi:lib1 -i ./target/wasm-gc/release/build/lib3/lib3.mi:lib3 -pkg-sources username/hello/main:./main -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/dummy_lib/dummy_lib.core ./target/wasm-gc/release/build/lib2/lib2.core ./target/wasm-gc/release/build/lib4/lib4.core ./target/wasm-gc/release/build/main/main.core -main username/hello/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources username/hello/dummy_lib:./dummy_lib -pkg-sources username/hello/lib2:./lib2 -pkg-sources username/hello/lib4:./lib4 -pkg-sources username/hello/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonrun ./target/wasm-gc/release/build/main/main.wasm
+        "#]],
+    );
+    check(
+        get_stdout(&virtual_pkg, ["run", "main"]),
+        expect![[r#"
+            another impl for f1 in lib2: 1
+            another impl for f2 in lib2: 2
+            another impl for f3 in lib4
+        "#]],
+    );
+    check(
+        get_stdout(&virtual_pkg, ["test", "--no-parallelize"]),
+        expect![[r#"
+            internal test
+            default impl for f1 in lib1: 1
+            another impl for f3 in lib4
+            wb test
+            default impl for f1 in lib1: 1
+            another impl for f3 in lib4
+            bb test
+            default impl for f1 in lib1: 1
+            another impl for f3 in lib4
+            Total tests: 3, passed: 3, failed: 0.
+        "#]],
+    );
+
+    let user = dir.join("user");
+    check(
+        get_stdout(&user, ["run", "main"]),
+        expect![[r#"
+            user impl for f1 in lib: 1
+            user impl for f2 in lib: 2
+            another impl for f3 in lib4
+        "#]],
+    );
+    check(
+        get_err_stdout(&user, ["test", "--no-parallelize"])
+            .lines()
+            .take(10)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+        expect![[r#"
+            internal test
+            default impl for f1 in lib1: 1
+            another impl for f3 in lib4
+            wb test
+            default impl for f1 in lib1: 1
+            another impl for f3 in lib4
+            bb test
+            default impl for f1 in lib1: 1
+            another impl for f3 in lib4
+            test username/xxx/lib2/hello_test.mbt::0 failed: Error
+        "#]],
+    );
+
+    let err = dir.join("err");
+    let content = get_err_stderr(&err, ["check"]);
+    assert!(content.contains("[$ROOT/lib1/lib1.mbti:5:1]"));
+    assert!(content.contains("[$ROOT/lib1/lib1.mbti:3:1]"));
+
+    // moon build will not build default impl for lib1 if no pkg depend on this default impl
+    // so here just report error for missing impl for f2(diy impl in lib2), no report error for missing impl for f1(default impl in lib1)
+    check(
+        get_err_stderr(&err, ["build"]),
+        expect![[r#"
+            Error: [4159]
+               ╭─[$ROOT/lib1/lib1.mbti:5:1]
+               │
+             5 │ fn f2(String) -> Unit
+               │ ──────────┬──────────  
+               │           ╰──────────── Missing implementation for function f2.
+            ───╯
+            error: failed when building
+        "#]],
+    );
+}
+
+#[test]
+fn moon_test_single_file() {
+    let dir = TestDir::new("moon_test_single_file.in");
+    let single_mbt = dir.join("single.mbt").display().to_string();
+    let single_mbt_md = dir.join("111.mbt.md").display().to_string();
+
+    // .mbt
+    {
+        // rel path
+        check(
+            get_stdout(&dir, ["test", "single.mbt", "-i", "0"]),
+            expect![[r#"
+                ------------------ 11111111 ------------------
+                Total tests: 1, passed: 1, failed: 0.
+            "#]],
+        );
+        check(
+            get_err_stdout(&dir, ["test", "single.mbt", "-i", "1"]),
+            expect![[r#"
+                test moon/test/single/single.mbt::1 failed
+                expect test failed at $ROOT/single.mbt:13:3-13:19
+                Diff:
+                ----
+                234523
+                ----
+
+                Total tests: 1, passed: 0, failed: 1.
+            "#]],
+        );
+        // abs path
+        check(
+            get_stdout(&dir, ["test", &single_mbt, "-i", "0"]),
+            expect![[r#"
+                ------------------ 11111111 ------------------
+                Total tests: 1, passed: 1, failed: 0.
+            "#]],
+        );
+        check(
+            get_stdout(&dir, ["test", &single_mbt, "-i", "1", "-u"]),
+            expect![[r#"
+    
+                Auto updating expect tests and retesting ...
+    
+                ------------------ 22222222 ------------------
+                Total tests: 1, passed: 1, failed: 0.
+            "#]],
+        );
+
+        check(
+            get_stderr(&dir, ["check", "single.mbt"]),
+            expect![[r#"
+                Warning: [0002]
+                   ╭─[$ROOT/single.mbt:8:7]
+                   │
+                 8 │   let single_mbt = 1
+                   │       ─────┬────  
+                   │            ╰────── Warning: Unused variable 'single_mbt'
+                ───╯
+                Finished. moon: ran 2 tasks, now up to date
+            "#]],
+        );
+        // abs path
+        check(
+            get_stderr(&dir, ["check", &single_mbt]),
+            expect![[r#"
+                Warning: [0002]
+                   ╭─[$ROOT/single.mbt:8:7]
+                   │
+                 8 │   let single_mbt = 1
+                   │       ─────┬────  
+                   │            ╰────── Warning: Unused variable 'single_mbt'
+                ───╯
+                Finished. moon: ran 1 task, now up to date
+            "#]],
+        );
+    }
+
+    // .mbt.md
+    {
+        check(
+            get_stdout(&dir, ["test", "222.mbt.md"]),
+            expect![[r#"
+                222
+                Total tests: 1, passed: 1, failed: 0.
+            "#]],
+        );
+
+        // rel path
+        check(
+            get_stdout(&dir, ["test", "111.mbt.md", "-i", "0"]),
+            expect![[r#"
+                111
+                Total tests: 1, passed: 1, failed: 0.
+            "#]],
+        );
+        check(
+            get_err_stdout(&dir, ["test", "111.mbt.md", "-i", "1"]),
+            expect![[r#"
+                test moon/test/single/111.mbt.md::1 failed
+                expect test failed at $ROOT/111.mbt.md:34:5-34:21
+                Diff:
+                ----
+                234523
+                ----
+
+                Total tests: 1, passed: 0, failed: 1.
+            "#]],
+        );
+        // abs path
+        check(
+            get_stdout(&dir, ["test", &single_mbt_md, "-i", "0"]),
+            expect![[r#"
+                111
+                Total tests: 1, passed: 1, failed: 0.
+            "#]],
+        );
+        check(
+            get_stdout(&dir, ["test", &single_mbt_md, "-i", "1", "-u"]),
+            expect![[r#"
+    
+                Auto updating expect tests and retesting ...
+    
+                222
+                Total tests: 1, passed: 1, failed: 0.
+            "#]],
+        );
+
+        // rel path
+        check(
+            get_stderr(&dir, ["check", "111.mbt.md"]),
+            expect![[r#"
+                Warning: [0002]
+                    ╭─[$ROOT/111.mbt.md:28:9]
+                    │
+                 28 │     let single_mbt_md = 1
+                    │         ──────┬──────  
+                    │               ╰──────── Warning: Unused variable 'single_mbt_md'
+                ────╯
+                Finished. moon: ran 18 tasks, now up to date
+            "#]],
+        );
+        // abs path
+        check(
+            get_stderr(&dir, ["check", &single_mbt_md]),
+            expect![[r#"
+                Warning: [0002]
+                    ╭─[$ROOT/111.mbt.md:28:9]
+                    │
+                 28 │     let single_mbt_md = 1
+                    │         ──────┬──────  
+                    │               ╰──────── Warning: Unused variable 'single_mbt_md'
+                ────╯
+                Finished. moon: ran 1 task, now up to date
+            "#]],
+        );
+    }
+}
+
+#[test]
+fn test_sub_package() {
+    let dir = TestDir::new("test_sub_package.in");
+
+    check(
+        get_stdout(&dir, ["test", "--dry-run", "--sort-input"]),
+        expect![[r#"
+            moonc build-package ./dep/hello.mbt -o ./target/wasm-gc/debug/test/dep/dep.core -pkg moon_new/dep -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/dep:./dep -target wasm-gc -g -O0 -source-map
+            moonc build-package ./sub_pkg/111.mbt ./sub_pkg/dir/222.mbt -o ./target/wasm-gc/debug/test/sub_pkg/sub_pkg_sub.core -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/dep/dep.mi:dep -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc -g -O0 -source-map
+            moonc build-package ./dep2/hello.mbt -o ./target/wasm-gc/debug/test/dep2/dep2.core -pkg moon_new/dep2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/dep2:./dep2 -target wasm-gc -g -O0 -source-map
+            moon generate-test-driver --source-dir . --target-dir ./target --package moon_new/test --sort-input --target wasm-gc --driver-kind internal --mode test
+            moonc build-package ./sub_pkg/111.mbt ./sub_pkg/hello.mbt -o ./target/wasm-gc/debug/test/sub_pkg/sub_pkg.core -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/dep2/dep2.mi:dep2 -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc -g -O0 -source-map
+            moonc build-package ./test/hello.mbt ./target/wasm-gc/debug/test/test/__generated_driver_for_internal_test.mbt -o ./target/wasm-gc/debug/test/test/test.internal_test.core -pkg moon_new/test -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/debug/test/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/test:./test -target wasm-gc -g -O0 -source-map -no-mi -test-mode
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/debug/test/dep2/dep2.core ./target/wasm-gc/debug/test/sub_pkg/sub_pkg.core ./target/wasm-gc/debug/test/test/test.internal_test.core -main moon_new/test -o ./target/wasm-gc/debug/test/test/test.internal_test.wasm -test-mode -pkg-config-path ./test/moon.pkg.json -pkg-sources moon_new/dep2:./dep2 -pkg-sources moon_new/sub_pkg:./sub_pkg -pkg-sources moon_new/test:./test -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -exported_functions moonbit_test_driver_internal_execute,moonbit_test_driver_finish -target wasm-gc -g -O0 -source-map
+        "#]],
+    );
+    check(
+        get_stdout(&dir, ["check", "--dry-run", "--sort-input"]),
+        expect![[r#"
+            moonc check ./dep/hello.mbt -o ./target/wasm-gc/release/check/dep/dep.mi -pkg moon_new/dep -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/dep:./dep -target wasm-gc
+            moonc check ./sub_pkg/111.mbt ./sub_pkg/dir/222.mbt -o ./target/wasm-gc/release/check/sub_pkg/sub_pkg_sub.mi -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/dep/dep.mi:dep -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc
+            moonc check ./test/hello.mbt -o ./target/wasm-gc/release/check/test/test.mi -pkg moon_new/test -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/test:./test -target wasm-gc
+            moonc check ./main/main.mbt -o ./target/wasm-gc/release/check/main/main.mi -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/main:./main -target wasm-gc
+            moonc check ./dep2/hello.mbt -o ./target/wasm-gc/release/check/dep2/dep2.mi -pkg moon_new/dep2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/dep2:./dep2 -target wasm-gc
+            moonc check ./sub_pkg/111.mbt ./sub_pkg/hello.mbt -o ./target/wasm-gc/release/check/sub_pkg/sub_pkg.mi -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/dep2/dep2.mi:dep2 -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc
+            moonc check ./lib/hello.mbt -o ./target/wasm-gc/release/check/lib/lib.mi -pkg moon_new/lib -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/check/sub_pkg/sub_pkg.mi:sub_pkg -pkg-sources moon_new/lib:./lib -target wasm-gc
+        "#]],
+    );
+    check(
+        get_stdout(&dir, ["build", "--dry-run", "--sort-input"]),
+        expect![[r#"
+            moonc build-package ./dep/hello.mbt -o ./target/wasm-gc/release/build/dep/dep.core -pkg moon_new/dep -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/dep:./dep -target wasm-gc
+            moonc build-package ./sub_pkg/111.mbt ./sub_pkg/dir/222.mbt -o ./target/wasm-gc/release/build/sub_pkg/sub_pkg_sub.core -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/dep/dep.mi:dep -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc
+            moonc build-package ./dep2/hello.mbt -o ./target/wasm-gc/release/build/dep2/dep2.core -pkg moon_new/dep2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/dep2:./dep2 -target wasm-gc
+            moonc build-package ./sub_pkg/111.mbt ./sub_pkg/hello.mbt -o ./target/wasm-gc/release/build/sub_pkg/sub_pkg.core -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/dep2/dep2.mi:dep2 -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc
+            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/main:./main -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/dep2/dep2.core ./target/wasm-gc/release/build/sub_pkg/sub_pkg.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/dep2:./dep2 -pkg-sources moon_new/sub_pkg:./sub_pkg -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+        "#]],
+    );
+    check(
+        get_stdout(&dir, ["run", "main", "--dry-run", "--sort-input"]),
+        expect![[r#"
+            moonc build-package ./dep/hello.mbt -o ./target/wasm-gc/release/build/dep/dep.core -pkg moon_new/dep -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -pkg-sources moon_new/dep:./dep -target wasm-gc
+            moonc build-package ./sub_pkg/111.mbt ./sub_pkg/dir/222.mbt -o ./target/wasm-gc/release/build/sub_pkg/sub_pkg_sub.core -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/dep/dep.mi:dep -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc
+            moonc build-package ./dep2/hello.mbt -o ./target/wasm-gc/release/build/dep2/dep2.core -pkg moon_new/dep2 -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/dep2:./dep2 -target wasm-gc
+            moonc build-package ./sub_pkg/111.mbt ./sub_pkg/hello.mbt -o ./target/wasm-gc/release/build/sub_pkg/sub_pkg.core -pkg moon_new/sub_pkg -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/dep2/dep2.mi:dep2 -pkg-sources moon_new/sub_pkg:./sub_pkg -target wasm-gc
+            moonc build-package ./main/main.mbt -o ./target/wasm-gc/release/build/main/main.core -pkg moon_new/main -is-main -std-path $MOON_HOME/lib/core/target/wasm-gc/release/bundle -i ./target/wasm-gc/release/build/sub_pkg/sub_pkg_sub.mi:sub_pkg -pkg-sources moon_new/main:./main -target wasm-gc
+            moonc link-core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/abort/abort.core $MOON_HOME/lib/core/target/wasm-gc/release/bundle/core.core ./target/wasm-gc/release/build/dep2/dep2.core ./target/wasm-gc/release/build/sub_pkg/sub_pkg.core ./target/wasm-gc/release/build/main/main.core -main moon_new/main -o ./target/wasm-gc/release/build/main/main.wasm -pkg-config-path ./main/moon.pkg.json -pkg-sources moon_new/dep2:./dep2 -pkg-sources moon_new/sub_pkg:./sub_pkg -pkg-sources moon_new/main:./main -pkg-sources moonbitlang/core:$MOON_HOME/lib/core -target wasm-gc
+            moonrun ./target/wasm-gc/release/build/main/main.wasm
+        "#]],
+    );
+}
+
+#[test]
+fn test_in_main_pkg() {
+    let dir = TestDir::new("test_in_main_pkg.in");
+
+    check(
+        get_stderr(&dir, ["check"]),
+        expect![[r#"
+            Warning: [0002]
+               ╭─[$ROOT/lib/1_test.mbt:2:7]
+               │
+             2 │   let a = 1
+               │       ┬  
+               │       ╰── Warning: Unused variable 'a'
+            ───╯
+            Finished. moon: ran 6 tasks, now up to date
+        "#]],
+    );
+
+    check(
+        get_stdout(
+            &dir,
+            ["test", "-p", "main", "--sort-input", "--no-parallelize"],
+        ),
+        expect![[r#"
+            hello from lib pkg
+            ------------------bb test in main pkg ------------------
+            hello from lib pkg
+            ------------------internal test in main pkg ------------------
+            hello from lib pkg
+            ------------------ wb test in main pkg ------------------
+            Total tests: 3, passed: 3, failed: 0.
+        "#]],
+    );
+    check(
+        get_stdout(&dir, ["test", "--sort-input", "--no-parallelize"]),
+        expect![[r#"
+            ------------------bb test in lib pkg ------------------
+            ------------------internal test in lib pkg ------------------
+            ------------------ wb test in lib pkg ------------------
+            hello from lib pkg
+            ------------------bb test in main pkg ------------------
+            hello from lib pkg
+            ------------------internal test in main pkg ------------------
+            hello from lib pkg
+            ------------------ wb test in main pkg ------------------
+            Total tests: 6, passed: 6, failed: 0.
+        "#]],
+    );
 }

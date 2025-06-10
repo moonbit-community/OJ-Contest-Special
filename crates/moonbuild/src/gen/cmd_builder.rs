@@ -21,8 +21,30 @@ pub struct CommandBuilder {
     args: Vec<String>,
 }
 
+impl<S> FromIterator<S> for CommandBuilder
+where
+    S: Into<String>,
+{
+    fn from_iter<T: IntoIterator<Item = S>>(iter: T) -> Self {
+        let mut iter = iter.into_iter();
+        let command = iter
+            .next()
+            .unwrap_or_else(|| panic!("command not found"))
+            .into();
+        let args = iter.map(|i| i.into()).collect::<Vec<_>>();
+
+        CommandBuilder { command, args }
+    }
+}
+
 impl CommandBuilder {
     pub fn new(command: &str) -> CommandBuilder {
+        // don't always quote the `command` since moon in windows will be quoted into 'moon'
+        let command = if command.contains(|c: char| c.is_whitespace()) {
+            shlex::try_quote(command).unwrap()
+        } else {
+            command.into()
+        };
         CommandBuilder {
             command: command.into(),
             args: Vec::new(),

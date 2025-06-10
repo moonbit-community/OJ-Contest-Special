@@ -26,7 +26,7 @@ use std::{
 
 use anyhow::bail;
 use moonutil::module::{MoonMod, MoonModJSON};
-use moonutil::mooncakes::ModuleName;
+use moonutil::{common::execute_postadd_script, mooncakes::ModuleName};
 use semver::Version;
 
 pub struct OnlineRegistry {
@@ -232,8 +232,20 @@ impl OnlineRegistry {
                 }
                 let mut outfile = std::fs::File::create(&outpath)?;
                 std::io::copy(&mut file, &mut outfile)?;
+
+                // Preserve file permissions
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Some(mode) = file.unix_mode() {
+                        std::fs::set_permissions(&outpath, std::fs::Permissions::from_mode(mode))?;
+                    }
+                }
             }
         }
+
+        execute_postadd_script(pkg_install_dir)?;
+
         Ok(())
     }
 }

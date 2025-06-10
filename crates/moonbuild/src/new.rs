@@ -77,6 +77,10 @@ pub fn moon_new_exec(
             bin_target: None,
             supported_targets: None,
             native_stub: None,
+            virtual_pkg: None,
+            implement: None,
+            overrides: None,
+            sub_package: None,
         };
         moonutil::common::write_package_json_to_file(&j, &main_moon_pkg)?;
     }
@@ -176,6 +180,10 @@ fn common(
 
             include: None,
             exclude: None,
+
+            scripts: None,
+
+            __moonbit_unstable_prebuild: None,
         };
         moonutil::common::write_module_json_to_file(&m, target_dir)
             .context(format!("failed to write `{}`", MOON_MOD_JSON))?;
@@ -230,6 +238,10 @@ fn common(
             bin_target: None,
             supported_targets: None,
             native_stub: None,
+            virtual_pkg: None,
+            implement: None,
+            overrides: None,
+            sub_package: None,
         };
         moonutil::common::write_package_json_to_file(&j, &lib_moon_pkg)?;
     }

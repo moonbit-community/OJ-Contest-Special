@@ -19,10 +19,14 @@
 use anyhow::Context;
 use regex::Regex;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::common::{backend_filter, MooncOpt, PatchItem, PatchJSON};
 use crate::package::Package;
+
+use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag};
 
 #[derive(Debug)]
 pub struct DocTest {
@@ -32,47 +36,95 @@ pub struct DocTest {
     pub line_count: usize,
 }
 
-pub struct DocTestExtractor {
-    test_pattern: Regex,
-}
+#[derive(Default)]
+pub struct DocTestExtractor {}
 
 impl DocTestExtractor {
-    pub fn new(is_md_test: bool) -> Self {
-        // \r\n for windows, \n for unix
-        let pattern = if is_md_test {
-            r#"[ \t]*```(?:mbt|moonbit)[ \t]*\r?\n([\s\S]*?)[ \t]*```"#
-        } else {
-            r#"///\s*```(?:mbt|moonbit)?\s*(?:\r?\n)((?:///.*(?:\r?\n))*?)///\s*```"#
-        };
-
-        Self {
-            test_pattern: Regex::new(pattern).expect("Invalid regex pattern"),
-        }
-    }
-
-    pub fn extract_from_file(&self, file_path: &Path) -> anyhow::Result<Vec<DocTest>> {
+    pub fn extract_doc_test_from_file(&self, file_path: &Path) -> anyhow::Result<Vec<DocTest>> {
         let content = fs::read_to_string(file_path)?;
 
         let mut tests = Vec::new();
 
-        for cap in self.test_pattern.captures_iter(&content) {
+        // \r\n for windows, \n for unix
+        let pattern =
+            Regex::new(r#"///\s*```([^\r\n]*)\s*(?:\r?\n)((?:///.*(?:\r?\n))*?)///\s*```"#)
+                .expect("Invalid regex pattern");
+        for cap in pattern.captures_iter(&content) {
             if let Some(test_match) = cap.get(0) {
-                let line_number = content[..test_match.start()]
-                    .chars()
-                    .filter(|&c| c == '\n')
-                    .count()
-                    + 1;
+                let lang = cap.get(1).map(|m| m.as_str().trim()).unwrap_or("");
+                if lang.is_empty() || lang == "mbt" || lang == "moonbit" {
+                    let line_number = content[..test_match.start()]
+                        .chars()
+                        .filter(|&c| c == '\n')
+                        .count()
+                        + 1;
 
-                if let Some(test_content) = cap.get(1) {
-                    let line_count = test_content.as_str().lines().count();
+                    if let Some(test_content) = cap.get(2) {
+                        let line_count = test_content.as_str().lines().count();
 
-                    tests.push(DocTest {
-                        content: test_content.as_str().to_string(),
-                        file_name: file_path.file_name().unwrap().to_str().unwrap().to_string(),
-                        line_number,
-                        line_count,
-                    });
+                        tests.push(DocTest {
+                            content: test_content.as_str().to_string(),
+                            file_name: file_path.file_name().unwrap().to_str().unwrap().to_string(),
+                            line_number,
+                            line_count,
+                        });
+                    }
                 }
+            }
+        }
+
+        Ok(tests)
+    }
+
+    pub fn extract_md_test_from_file(&self, file_path: &Path) -> anyhow::Result<Vec<DocTest>> {
+        let content = fs::read_to_string(file_path)?;
+
+        let mut tests = Vec::new();
+
+        let parser = Parser::new(&content);
+
+        let mut current_code = String::new();
+        let mut in_moonbit_block = false;
+        let mut block_start_line = 0;
+        let mut current_indent = String::new();
+
+        for (event, range) in parser.into_offset_iter() {
+            let current_line = content[..range.start]
+                .chars()
+                .filter(|c| *c == '\n')
+                .count()
+                + 1;
+
+            match event {
+                Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
+                    if lang.as_ref() == "moonbit" || lang.as_ref() == "mbt" {
+                        in_moonbit_block = true;
+                        block_start_line = current_line;
+                        current_code.clear();
+                        current_indent = content
+                            .lines()
+                            .nth(current_line - 1)
+                            .unwrap_or("")
+                            .split("`")
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
+                    }
+                }
+                Event::Text(text) if in_moonbit_block => {
+                    current_code.push_str(&current_indent);
+                    current_code.push_str(&text);
+                }
+                Event::End(_) if in_moonbit_block => {
+                    tests.push(DocTest {
+                        content: current_code.clone(),
+                        file_name: file_path.file_name().unwrap().to_str().unwrap().to_string(),
+                        line_number: block_start_line,
+                        line_count: current_code.lines().count(),
+                    });
+                    in_moonbit_block = false;
+                }
+                _ => {}
             }
         }
 
@@ -95,7 +147,7 @@ impl PatchJSON {
                 let already_wrapped = doc_test
                     .content
                     .lines()
-                    .any(|line| line.replace("///", "").trim_start().starts_with("test"));
+                    .any(|line| line.replacen("///", "", 1).trim_start().starts_with("test"));
 
                 let processed_content = doc_test
                     .content
@@ -103,11 +155,11 @@ impl PatchJSON {
                     .lines()
                     .map(|line| {
                         if already_wrapped {
-                            let remove_slash = line.replace("///", "").trim_start().to_string();
+                            let remove_slash = line.replacen("///", "", 1).trim_start().to_string();
                             if remove_slash.starts_with("test") || remove_slash.starts_with("}") {
                                 remove_slash
                             } else {
-                                line.to_string().replace("///", "   ")
+                                line.to_string().replacen("///", "   ", 1)
                             }
                         } else {
                             format!("   {}", line.trim_start_matches("///")).to_string()
@@ -158,46 +210,17 @@ impl PatchJSON {
             let mut current_line = 1;
             let mut content = String::new();
             for md_test in doc_test_in_md_file {
-                let test_name = format!(
-                    "{} {} {} {}",
-                    "md_test", md_test.file_name, md_test.line_number, md_test.line_count
-                );
-
-                let already_wrapped = md_test
-                    .content
-                    .lines()
-                    .any(|line| line.trim_start().starts_with("test"));
-
                 let processed_content = md_test
                     .content
                     .as_str()
                     .lines()
-                    .map(|line| {
-                        if already_wrapped {
-                            let remove_slash = line.trim_start().to_string();
-                            if remove_slash.starts_with("test") || remove_slash.starts_with("}") {
-                                remove_slash
-                            } else {
-                                format!("  {}", line).to_string()
-                            }
-                        } else {
-                            format!("  {}", line).to_string()
-                        }
-                    })
                     .collect::<Vec<_>>()
                     .join("\n");
 
                 let start_line_number = md_test.line_number;
                 let empty_lines = "\n".repeat(start_line_number - current_line);
 
-                if already_wrapped {
-                    content.push_str(&format!("\n{}{}\n", empty_lines, processed_content));
-                } else {
-                    content.push_str(&format!(
-                        "{}test \"{}\" {{\n{}\n}}",
-                        empty_lines, test_name, processed_content
-                    ));
-                }
+                content.push_str(&format!("\n{}{}\n", empty_lines, processed_content));
 
                 // +1 for the }
                 current_line = start_line_number + md_test.line_count + 1;
@@ -207,11 +230,7 @@ impl PatchJSON {
             }
             patches.push(PatchItem {
                 // xxx.md -> xxx_md_test.mbt
-                name: format!(
-                    "{}{}.mbt",
-                    doc_test_in_md_file[0].file_name.trim_end_matches(".mbt"),
-                    crate::common::MOON_MD_TEST_POSTFIX,
-                ),
+                name: doc_test_in_md_file[0].file_name.clone(),
                 content,
             });
         }
@@ -223,7 +242,7 @@ impl PatchJSON {
     }
 }
 
-pub fn gen_doc_test_patch(pkg: &Package, moonc_opt: &MooncOpt) -> anyhow::Result<PathBuf> {
+pub fn gen_doc_test_patch(pkg: &Package, moonc_opt: &MooncOpt) -> anyhow::Result<Option<PathBuf>> {
     let mbt_files = backend_filter(
         &pkg.files,
         moonc_opt.build_opt.debug_flag,
@@ -231,12 +250,16 @@ pub fn gen_doc_test_patch(pkg: &Package, moonc_opt: &MooncOpt) -> anyhow::Result
     );
 
     let mut doc_tests = vec![];
-    let doc_test_extractor = DocTestExtractor::new(false);
+    let doc_test_extractor = DocTestExtractor::default();
     for file in mbt_files {
-        let doc_test_in_mbt_file = doc_test_extractor.extract_from_file(&file)?;
+        let doc_test_in_mbt_file = doc_test_extractor.extract_doc_test_from_file(&file)?;
         if !doc_test_in_mbt_file.is_empty() {
             doc_tests.push(doc_test_in_mbt_file);
         }
+    }
+
+    if doc_tests.is_empty() {
+        return Ok(None);
     }
 
     let pj = PatchJSON::from_doc_tests(doc_tests);
@@ -246,13 +269,20 @@ pub fn gen_doc_test_patch(pkg: &Package, moonc_opt: &MooncOpt) -> anyhow::Result
     if !pj_path.parent().unwrap().exists() {
         std::fs::create_dir_all(pj_path.parent().unwrap())?;
     }
-    std::fs::write(&pj_path, serde_json_lenient::to_string_pretty(&pj)?)
-        .context(format!("failed to write {}", &pj_path.display()))?;
 
-    Ok(pj_path)
+    let mut file =
+        File::create(&pj_path).context(format!("failed to create file {}", pj_path.display()))?;
+
+    let content = serde_json_lenient::to_string_pretty(&pj)?;
+    file.write_all(content.as_bytes())
+        .context(format!("failed to write to {}", pj_path.display()))?;
+    file.flush()
+        .context(format!("failed to flush {}", pj_path.display()))?;
+
+    Ok(Some(pj_path))
 }
 
-pub fn gen_md_test_patch(pkg: &Package, moonc_opt: &MooncOpt) -> anyhow::Result<PathBuf> {
+pub fn gen_md_test_patch(pkg: &Package, moonc_opt: &MooncOpt) -> anyhow::Result<Option<PathBuf>> {
     let md_files = backend_filter(
         &pkg.mbt_md_files,
         moonc_opt.build_opt.debug_flag,
@@ -260,23 +290,34 @@ pub fn gen_md_test_patch(pkg: &Package, moonc_opt: &MooncOpt) -> anyhow::Result<
     );
 
     let mut md_tests = vec![];
-    let md_test_extractor = DocTestExtractor::new(true);
+    let md_test_extractor = DocTestExtractor::default();
     for file in md_files {
-        let doc_test_in_md_file = md_test_extractor.extract_from_file(&file)?;
+        let doc_test_in_md_file = md_test_extractor.extract_md_test_from_file(&file)?;
         if !doc_test_in_md_file.is_empty() {
             md_tests.push(doc_test_in_md_file);
         }
     }
 
+    if md_tests.is_empty() {
+        return Ok(None);
+    }
+
     let pj = PatchJSON::from_md_tests(md_tests);
     let pj_path = pkg
         .artifact
-        .with_file_name(format!("{}.json", crate::common::MOON_DOC_TEST_POSTFIX));
+        .with_file_name(format!("{}.json", crate::common::MOON_MD_TEST_POSTFIX));
     if !pj_path.parent().unwrap().exists() {
         std::fs::create_dir_all(pj_path.parent().unwrap())?;
     }
-    std::fs::write(&pj_path, serde_json_lenient::to_string_pretty(&pj)?)
-        .context(format!("failed to write {}", &pj_path.display()))?;
 
-    Ok(pj_path)
+    let mut file =
+        File::create(&pj_path).context(format!("failed to create file {}", pj_path.display()))?;
+
+    let content = serde_json_lenient::to_string_pretty(&pj)?;
+    file.write_all(content.as_bytes())
+        .context(format!("failed to write to {}", pj_path.display()))?;
+    file.flush()
+        .context(format!("failed to flush {}", pj_path.display()))?;
+
+    Ok(Some(pj_path))
 }

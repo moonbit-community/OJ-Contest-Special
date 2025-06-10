@@ -22,7 +22,7 @@ use ariadne::Fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{line_col_to_byte_idx, PatchJSON, MOON_DOC_TEST_POSTFIX, MOON_MD_TEST_POSTFIX},
+    common::{line_col_to_byte_idx, PatchJSON, MOON_DOC_TEST_POSTFIX},
     error_code_docs::get_error_code_doc,
 };
 
@@ -105,14 +105,35 @@ impl MooncDiagnostic {
         use_fancy: bool,
         check_patch_file: Option<PathBuf>,
         explain: bool,
+        (target_dir, source_dir): (PathBuf, PathBuf),
     ) {
-        let diagnostic = match serde_json_lenient::from_str::<MooncDiagnostic>(content) {
+        let mut diagnostic = match serde_json_lenient::from_str::<MooncDiagnostic>(content) {
             Ok(d) => d,
             Err(_) => {
                 eprintln!("{}", content);
                 return;
             }
         };
+
+        // a workaround for rendering the diagnostaic and error in generated test driver file correctly
+        if diagnostic.location.path.contains("__generated_driver_for_") {
+            let source = crate::common::read_module_desc_file_in_dir(source_dir.as_path())
+                .unwrap()
+                .source;
+            let source_code_dir = match source {
+                Some(source) => source_dir.join(source),
+                None => source_dir,
+            };
+            let rel_path = PathBuf::from(
+                diagnostic
+                    .location
+                    .path
+                    .clone()
+                    .replace(&source_code_dir.display().to_string(), "."),
+            );
+            let mbt_file_path = target_dir.join(rel_path);
+            diagnostic.location.path = mbt_file_path.display().to_string();
+        }
 
         let (kind, color) = diagnostic.get_level_and_color();
 
@@ -121,24 +142,19 @@ impl MooncDiagnostic {
             eprintln!(
                 "{}",
                 format!(
-                    "[{}] {}: {}",
-                    diagnostic.error_code, kind, diagnostic.message
+                    "{}: [{}] {}",
+                    kind,
+                    diagnostic.formatted_error_code(),
+                    diagnostic.message
                 )
                 .fg(color)
             );
             return;
         }
 
-        let (is_doc_test, is_md_test) = (
-            diagnostic.location.path.contains(MOON_DOC_TEST_POSTFIX),
-            diagnostic.location.path.contains(MOON_MD_TEST_POSTFIX),
-        );
-        let source_file_path = if is_doc_test || is_md_test {
-            diagnostic
-                .location
-                .path
-                .replace(MOON_DOC_TEST_POSTFIX, "")
-                .replace(&format!("{}.mbt", MOON_MD_TEST_POSTFIX), "")
+        let is_doc_test = diagnostic.location.path.contains(MOON_DOC_TEST_POSTFIX);
+        let source_file_path = if is_doc_test {
+            diagnostic.location.path.replace(MOON_DOC_TEST_POSTFIX, "")
         } else {
             diagnostic.location.path.clone()
         };
@@ -159,7 +175,7 @@ impl MooncDiagnostic {
                             eprintln!(
                                 "failed to read file `{}`, [{}] {}: {}",
                                 source_file_path,
-                                diagnostic.error_code,
+                                diagnostic.formatted_error_code(),
                                 diagnostic.level,
                                 diagnostic.message
                             );
@@ -172,13 +188,11 @@ impl MooncDiagnostic {
         let start_offset = diagnostic
             .location
             .start
-            .calculate_offset(&source_file_content)
-            - if is_md_test { 2 } else { 0 };
+            .calculate_offset(&source_file_content);
         let end_offset = diagnostic
             .location
             .end
-            .calculate_offset(&source_file_content)
-            - if is_md_test { 2 } else { 0 };
+            .calculate_offset(&source_file_content);
 
         // Remapping if there's .map.json file
         // TODO: log reasons for `.map.json` exists but not works.
@@ -215,11 +229,11 @@ impl MooncDiagnostic {
             );
 
         if explain {
-            let error_code_doc = get_error_code_doc(&diagnostic.error_code.to_string()).unwrap();
+            let error_code_doc = get_error_code_doc(&diagnostic.formatted_error_code()).unwrap();
             report_builder = report_builder.with_message(error_code_doc.fg(color));
         } else {
-            report_builder =
-                report_builder.with_message(format!("[{}]", diagnostic.error_code).fg(color));
+            report_builder = report_builder
+                .with_message(format!("[{}]", diagnostic.formatted_error_code()).fg(color));
         }
 
         if !use_fancy {
@@ -227,13 +241,15 @@ impl MooncDiagnostic {
                 report_builder.with_config(ariadne::Config::default().with_color(false));
         }
 
-        report_builder
-            .finish()
-            .eprint((
-                &display_filename,
-                ariadne::Source::from(source_file_content),
-            ))
-            .unwrap();
+        match report_builder.finish().eprint((
+            &display_filename,
+            ariadne::Source::from(source_file_content),
+        )) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("internal rendering error: {:?}", e);
+            }
+        };
     }
 
     fn get_content_and_filename_from_diagnostic_patch_file(
@@ -263,5 +279,9 @@ impl MooncDiagnostic {
         } else {
             (ariadne::ReportKind::Advice, ariadne::Color::Blue)
         }
+    }
+
+    pub fn formatted_error_code(&self) -> String {
+        format!("{:04}", self.error_code)
     }
 }

@@ -31,10 +31,7 @@ pub struct MoonDirs {
 }
 
 pub static MOON_DIRS: std::sync::LazyLock<MoonDirs> = std::sync::LazyLock::new(|| {
-    let moonc_path = which::which("moonc")
-        .context("moonc not found in PATH")
-        .unwrap();
-    let moon_home = moonc_path.parent().unwrap().parent().unwrap().to_path_buf();
+    let moon_home = home();
     let moon_include_path = moon_home.join("include");
     let moon_lib_path = moon_home.join("lib");
     let moon_bin_path = moon_home.join("bin");
@@ -106,13 +103,16 @@ pub fn core_packages_list(backend: TargetBackend) -> PathBuf {
         .join("packages.json")
 }
 
-pub fn core_core(backend: TargetBackend) -> PathBuf {
-    core()
-        .join("target")
-        .join(backend.to_dir_name())
-        .join("release")
-        .join("bundle")
-        .join("core.core")
+// core.core & abort.core(virtual pkg default impl)
+pub fn core_core(backend: TargetBackend) -> Vec<String> {
+    vec![
+        core_bundle(backend)
+            .join("abort")
+            .join("abort.core")
+            .display()
+            .to_string(),
+        core_bundle(backend).join("core.core").display().to_string(),
+    ]
 }
 
 pub fn cache() -> PathBuf {

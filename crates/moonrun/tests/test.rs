@@ -113,8 +113,8 @@ fn test_moonrun_wasm_stack_trace() {
         &s,
         expect![[r#"
             RuntimeError: unreachable
-                at wasm://wasm/96bbf26e:wasm-function[1]:0x8b
-                at wasm://wasm/96bbf26e:wasm-function[3]:0x9a
+                at wasm://wasm/6bf44e26:wasm-function[1]:0x87
+                at wasm://wasm/6bf44e26:wasm-function[2]:0x93
         "#]],
     );
 
@@ -147,6 +147,10 @@ fn test_moon_run_with_cli_args() {
 
     let wasm_file = dir.join("target/wasm-gc/release/build/main/main.wasm");
 
+    // `argv` passed to CLI is:
+    // <wasm_file> <...rest argv to moonrun>
+
+    // Assert it has the WASM file as argv[0]
     let out = snapbox::cmd::Command::new(snapbox::cmd::cargo_bin("moonrun"))
         .arg(&wasm_file)
         .assert()
@@ -156,9 +160,10 @@ fn test_moon_run_with_cli_args() {
         .to_owned();
     let s = std::str::from_utf8(&out).unwrap().to_string();
 
-    assert!(s.contains("moonrun"));
     assert!(s.contains(".wasm"));
+    assert!(!s.contains("moonrun"));
 
+    // Assert it passes the rest verbatim
     let out = snapbox::cmd::Command::new(snapbox::cmd::cargo_bin("moonrun"))
         .arg(&wasm_file)
         .arg("--")
@@ -170,7 +175,25 @@ fn test_moon_run_with_cli_args() {
         .to_owned();
     let s = std::str::from_utf8(&out).unwrap().to_string();
 
-    assert!(s.contains("\"中文\", \"😄👍\", \"hello\", \"1242\""));
+    assert!(!s.contains("moonrun"));
+    assert!(!s.contains("--"));
+    assert!(s.contains(r#".wasm", "中文", "😄👍", "hello", "1242""#));
+
+    let out = snapbox::cmd::Command::new(snapbox::cmd::cargo_bin("moonrun"))
+        .arg(&wasm_file)
+        .arg("--no-stack-trace") // this ia an arg accepted by moonrun
+        .arg("--")
+        .args(["--arg1", "--arg2", "arg3"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .to_owned();
+    let s = std::str::from_utf8(&out).unwrap().to_string();
+
+    assert!(!s.contains("moonrun"));
+    assert!(!s.contains("--no-stack-trace"));
+    assert!(s.contains(r#".wasm", "--arg1", "--arg2", "arg3""#))
 }
 
 #[test]

@@ -36,14 +36,15 @@ use n2::{trace, work};
 use anyhow::Context;
 use colored::Colorize;
 
+use crate::benchmark::{render_batch_bench_summary, BATCHBENCH};
 use crate::check::normal::write_pkg_lst;
 use crate::expect::{apply_snapshot, render_snapshot_fail};
 use crate::runtest::TestStatistics;
 
 use moonutil::common::{
-    DriverKind, FileLock, FileName, MoonbuildOpt, MooncGenTestInfo, MooncOpt, TargetBackend,
-    TestArtifacts, TestBlockIndex, TestName, BLACKBOX_TEST_PATCH, MOON_DOC_TEST_POSTFIX,
-    MOON_MD_TEST_POSTFIX, TEST_INFO_FILE, WHITEBOX_TEST_PATCH,
+    DriverKind, FileLock, FileName, MoonbuildOpt, MooncGenTestInfo, MooncOpt, PrePostBuild,
+    TargetBackend, TestArtifacts, TestBlockIndex, TestName, DOT_MBT_DOT_MD, MOON_DOC_TEST_POSTFIX,
+    SINGLE_FILE_TEST_PACKAGE, TEST_INFO_FILE,
 };
 
 use std::sync::{Arc, Mutex};
@@ -109,6 +110,11 @@ pub fn n2_simple_run_interface(
         .check_opt
         .as_ref()
         .is_some_and(|it| it.explain);
+
+    let (target_dir, source_dir) = (
+        moonbuild_opt.target_dir.clone(),
+        moonbuild_opt.source_dir.clone(),
+    );
     let render_and_catch = move |output: &str| {
         output
             .split('\n')
@@ -123,6 +129,7 @@ pub fn n2_simple_run_interface(
                         use_fancy,
                         check_patch_file.clone(),
                         explain,
+                        (target_dir.clone(), source_dir.clone()),
                     );
                 }
             });
@@ -191,6 +198,11 @@ pub fn n2_run_interface(
         .check_opt
         .as_ref()
         .is_some_and(|it| it.explain);
+
+    let (target_dir, source_dir) = (
+        moonbuild_opt.target_dir.clone(),
+        moonbuild_opt.source_dir.clone(),
+    );
     let render_and_catch = move |output: &str| {
         output.lines().for_each(|content| {
             catcher.lock().unwrap().push(content.to_owned());
@@ -202,6 +214,7 @@ pub fn n2_run_interface(
                     use_fancy,
                     check_patch_file.clone(),
                     explain,
+                    (target_dir.clone(), source_dir.clone()),
                 );
             }
         });
@@ -242,6 +255,10 @@ pub fn n2_run_interface(
     let output_path = moonbuild_opt
         .target_dir
         .join(format!("{}.output", moonbuild_opt.run_mode.to_dir_name()));
+    let (target_dir, source_dir) = (
+        moonbuild_opt.target_dir.clone(),
+        moonbuild_opt.source_dir.clone(),
+    );
     if let Some(0) = res {
         // if no work to do, then do not rewrite (build | check | test ...).output
         // instead, read it and print
@@ -264,6 +281,7 @@ pub fn n2_run_interface(
                         .check_opt
                         .as_ref()
                         .is_some_and(|it| it.explain),
+                    (target_dir.clone(), source_dir.clone()),
                 );
             }
         });
@@ -339,42 +357,49 @@ fn vis_build_graph(state: &State, moonbuild_opt: &MoonbuildOpt) {
     eprintln!("generated build graph: {}", path.display());
 }
 
-pub enum MoonPreBuildState {
+#[derive(Copy, Clone)]
+pub enum MoonXBuildState {
     NoWork,
     WorkDone,
 }
 
-pub fn run_moon_pre_build(
+pub fn run_moon_x_build(
     moonbuild_opt: &MoonbuildOpt,
     module: &ModuleDB,
-) -> anyhow::Result<MoonPreBuildState> {
+    build_type: &PrePostBuild,
+) -> anyhow::Result<MoonXBuildState> {
     let common = moonbuild_opt.raw_target_dir.join("common");
     if !common.exists() {
         std::fs::create_dir_all(&common)?;
     }
     let _lock = FileLock::lock(&common)?;
 
-    let pre_build_state = crate::pre_build::load_moon_pre_build(moonbuild_opt, module)?;
-    if let Some(pre_build_state) = pre_build_state {
-        let pre_build_result = n2_simple_run_interface(pre_build_state, moonbuild_opt)?;
-        render_pre_build_result(pre_build_result, moonbuild_opt.quiet)?;
-        Ok(MoonPreBuildState::WorkDone)
+    let x_build_state = crate::pre_build::load_moon_x_build(moonbuild_opt, module, build_type)?;
+    if let Some(x_build_state) = x_build_state {
+        let pre_build_result = n2_simple_run_interface(x_build_state, moonbuild_opt)?;
+        render_x_build_result(pre_build_result, moonbuild_opt.quiet, build_type)?;
+        Ok(MoonXBuildState::WorkDone)
     } else {
-        Ok(MoonPreBuildState::NoWork)
+        Ok(MoonXBuildState::NoWork)
     }
 }
 
-fn render_pre_build_result(result: Option<usize>, quiet: bool) -> anyhow::Result<i32> {
+fn render_x_build_result(
+    result: Option<usize>,
+    quiet: bool,
+    build_type: &PrePostBuild,
+) -> anyhow::Result<i32> {
     match result {
         None => {
-            anyhow::bail!(format!("failed when execute generate"));
+            anyhow::bail!(format!("failed when execute {} task(s)", build_type.name()));
         }
         Some(0) => Ok(0),
         Some(n) => {
             if !quiet {
                 eprintln!(
-                    "Executed {} pre-build task{}, now up to date",
+                    "Executed {} {} task{}, now up to date",
                     n,
+                    build_type.name(),
                     if n == 1 { "" } else { "s" }
                 );
             }
@@ -551,36 +576,21 @@ fn convert_moonc_test_info(
     patch_file: &Option<PathBuf>,
 ) -> anyhow::Result<IndexMap<PathBuf, FileTestInfo>> {
     let mut test_info_files = vec![];
-    for (files, driver_kind) in [
-        (&pkg.files, DriverKind::Internal),
-        (&pkg.wbtest_files, DriverKind::Whitebox),
-        (&pkg.test_files, DriverKind::Blackbox),
+    for driver_kind in [
+        DriverKind::Internal,
+        DriverKind::Whitebox,
+        DriverKind::Blackbox,
     ] {
-        let need_test_info = !files.is_empty()
-            || patch_file.as_ref().is_some_and(|pf| {
-                let filename = pf.to_str().unwrap();
-                match driver_kind {
-                    DriverKind::Internal => {
-                        !filename.ends_with(BLACKBOX_TEST_PATCH)
-                            && !filename.ends_with(WHITEBOX_TEST_PATCH)
-                    }
-                    DriverKind::Whitebox => filename.ends_with(WHITEBOX_TEST_PATCH),
-                    DriverKind::Blackbox => filename.ends_with(BLACKBOX_TEST_PATCH),
-                }
-            });
-
-        if need_test_info {
-            test_info_files.push(test_info_file.join(format!(
-                "__{}_{}",
-                driver_kind.to_string(),
-                TEST_INFO_FILE
-            )));
+        let path = test_info_file.join(format!("__{}_{}", driver_kind.to_string(), TEST_INFO_FILE));
+        if path.exists() {
+            test_info_files.push(path);
         }
     }
 
     let mut moonc_test_info = MooncGenTestInfo {
         no_args_tests: IndexMap::new(),
         with_args_tests: IndexMap::new(),
+        with_bench_args_tests: IndexMap::new(),
     };
     for test_info_file in test_info_files {
         let content = std::fs::read_to_string(&test_info_file)
@@ -590,6 +600,9 @@ fn convert_moonc_test_info(
             .context(format!("failed to parse {}", test_info_file.display()))?;
         moonc_test_info.no_args_tests.extend(info.no_args_tests);
         moonc_test_info.with_args_tests.extend(info.with_args_tests);
+        moonc_test_info
+            .with_bench_args_tests
+            .extend(info.with_bench_args_tests);
     }
 
     let mut current_pkg_test_info = IndexMap::new();
@@ -598,6 +611,7 @@ fn convert_moonc_test_info(
         .no_args_tests
         .into_iter()
         .chain(moonc_test_info.with_args_tests.into_iter())
+        .chain(moonc_test_info.with_bench_args_tests.into_iter())
     {
         if test_info.is_empty() {
             continue;
@@ -611,13 +625,15 @@ fn convert_moonc_test_info(
         // so tests in other files should be filtered out
         if let Some(patch_json) = patch_file {
             if patch_json.to_str().unwrap().contains(MOON_DOC_TEST_POSTFIX)
-                && !(filename.contains(MOON_DOC_TEST_POSTFIX)
-                    || filename.contains(MOON_MD_TEST_POSTFIX))
+                && !filename.contains(MOON_DOC_TEST_POSTFIX)
             {
                 continue;
             }
         }
-        let test_type = if filename.ends_with("_test.mbt") {
+        let test_type = if filename.ends_with("_test.mbt")
+            || filename.ends_with(DOT_MBT_DOT_MD)
+            || pkg.full_name() == SINGLE_FILE_TEST_PACKAGE
+        {
             DriverKind::Blackbox.to_string()
         } else if filename.ends_with("_wbtest.mbt") {
             DriverKind::Whitebox.to_string()
@@ -676,7 +692,7 @@ pub fn run_test(
     for (pkgname, pkg) in module
         .get_all_packages()
         .iter()
-        .filter(|(_, p)| !(p.is_main || p.is_third_party))
+        .filter(|(_, p)| !p.is_third_party)
     {
         if let Some(package) = filter_package {
             if !package.contains(pkgname) {
@@ -730,10 +746,8 @@ pub fn run_test(
                 );
 
                 std::fs::write(&wrapper_js_driver_path, js_driver)?;
-                // prevent node use the outer layer packages.json, which may cause ide debug can't start
-                if moonc_opt.build_opt.debug_flag {
-                    std::fs::write(moonbuild_opt.target_dir.join("package.json"), "{}")?;
-                }
+                // prevent node use the outer layer package.json with `"type": "module"`
+                std::fs::write(moonbuild_opt.target_dir.join("package.json"), "{}")?;
                 test_artifacts
                     .artifacts_path
                     .push(wrapper_js_driver_path.clone());
@@ -945,7 +959,14 @@ async fn handle_test_result(
     for item in test_res_for_cur_pkg {
         match item {
             Ok(ok_ts) => {
-                if test_verbose_output {
+                if ok_ts.message.starts_with(BATCHBENCH) {
+                    let stat = ok_ts;
+                    println!(
+                        "bench {}/{}::{}",
+                        stat.package, stat.filename, stat.test_name,
+                    );
+                    render_batch_bench_summary(&stat.message);
+                } else if test_verbose_output {
                     println!(
                         "test {}/{}::{} {}",
                         ok_ts.package,
@@ -1113,11 +1134,8 @@ async fn handle_test_result(
                         _ => &[origin_err.message.clone()],
                     };
 
-                    if let Err(e) = crate::expect::apply_expect(
-                        update_msg,
-                        origin_err.is_doc_test,
-                        origin_err.is_md_test,
-                    ) {
+                    if let Err(e) = crate::expect::apply_expect(update_msg, origin_err.is_doc_test)
+                    {
                         eprintln!("{}: {:?}", "apply expect failed".red().bold(), e);
                     }
                     // if is doc test, after apply_expect, we need to update the doc test patch file
@@ -1169,7 +1187,6 @@ async fn handle_test_result(
                         if let Err(e) = crate::expect::apply_expect(
                             &[etf.message.clone()],
                             origin_err.is_doc_test,
-                            origin_err.is_md_test,
                         ) {
                             eprintln!("{}: {:?}", "failed".red().bold(), e);
                             break;

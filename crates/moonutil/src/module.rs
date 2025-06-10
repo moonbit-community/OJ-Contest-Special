@@ -81,6 +81,7 @@ impl ModuleDB {
         &mut self.packages
     }
 
+    #[track_caller]
     pub fn get_package_by_name(&self, name: &str) -> &Package {
         self.packages.get(name).unwrap()
     }
@@ -249,7 +250,7 @@ impl ModuleDB {
             let to_idx = name_to_idx[to_node];
 
             for dep in pkg.imports.iter() {
-                let from_node = dep.path.make_full_path();
+                let from_node = dep.make_full_path();
                 if !name_to_idx.contains_key(&from_node) {
                     let to_idx = graph.add_node(from_node.clone());
                     name_to_idx.insert(from_node.clone(), to_idx);
@@ -519,6 +520,109 @@ impl ModuleDB {
         }
         false
     }
+
+    // some rules for virtual pkg
+    pub fn validate_virtual_pkg(&self) -> anyhow::Result<()> {
+        for (_, pkg) in &self.packages {
+            // should we ignore third party packages?
+            if pkg.is_third_party {
+                continue;
+            }
+
+            let pkg_json = self
+                .source_dir
+                .join(pkg.rel.fs_full_name())
+                .join(MOON_PKG_JSON);
+
+            // virtual pkg can't implement other packages
+            if pkg.virtual_pkg.is_some() && pkg.implement.is_some() {
+                bail!(
+                    "{}: virtual package `{}` cannot implement other packages",
+                    pkg_json.display(),
+                    pkg.full_name()
+                );
+            }
+
+            if let Some(pkg_to_impl) = &pkg.implement {
+                match self.get_package_by_name_safe(pkg_to_impl) {
+                    // pkg_to_impl must be existed
+                    None => bail!(
+                        "{}: could not found the package `{}` to implemented, make sure the package name is correct, e.g. 'moonbitlang/core/double'",
+                        pkg_json.display(),
+                        pkg_to_impl
+                    ),
+                    // pkg_to_impl must be a virtual pkg
+                    Some(pkg) if pkg.virtual_pkg.is_none() => {
+                        bail!(
+                            "{}: `{}` to implement must be a virtual package",
+                            pkg_json.display(),
+                            pkg_to_impl
+                        )
+                    },
+                    _ => {}
+                }
+
+                // cannot implement and import at the same time
+                if pkg
+                    .imports
+                    .iter()
+                    .any(|i| i.path.make_full_path() == *pkg_to_impl)
+                {
+                    bail!(
+                        "{}: cannot implement and import `{}` at the same time",
+                        pkg_json.display(),
+                        pkg_to_impl
+                    );
+                }
+            }
+
+            if let Some(overrides) = &pkg.overrides {
+                let mut seen = std::collections::HashMap::new();
+
+                for over_ride in overrides {
+                    let override_impl = self.get_package_by_name_safe(over_ride);
+
+                    match override_impl {
+                        Some(impl_pkg) => {
+                            match impl_pkg.implement.as_ref() {
+                                Some(virtual_pkgname) => {
+                                    // one virtual pkg can only have one implementation when link-core
+                                    #[allow(clippy::map_entry)]
+                                    if seen.contains_key(&virtual_pkgname) {
+                                        bail!(
+                                            "{}: duplicate implementation found for virtual package `{}`, both `{}` and `{}` implement it",
+                                            pkg_json.display(),
+                                            virtual_pkgname,
+                                            seen[&virtual_pkgname],
+                                            over_ride
+                                        );
+                                    } else {
+                                        seen.insert(virtual_pkgname, over_ride.clone());
+                                    }
+                                }
+                                None => {
+                                    bail!(
+                                        "{}: package `{}` doesn't implement any virtual package",
+                                        pkg_json.display(),
+                                        over_ride
+                                    )
+                                }
+                            }
+                        }
+                        None => {
+                            // override_impl must exist
+                            bail!(
+                                "{}: could not found the package `{}`, make sure the package name is correct, e.g. 'moonbitlang/core/double'",
+                                pkg_json.display(),
+                                over_ride
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -535,6 +639,10 @@ pub struct ModuleDBJSON {
 pub fn convert_mdb_to_json(module: &ModuleDB) -> ModuleDBJSON {
     let mut pkgs = vec![];
     for (_, pkg) in &module.packages {
+        // skip virtual moonbitlang/core/abort (gen_moonbitlang_abort_pkg)
+        if pkg.full_name().starts_with(crate::common::MOONBITLANG_CORE) && pkg.is_third_party {
+            continue;
+        }
         let files = pkg.files.clone();
         let wbtest_files = pkg.wbtest_files.clone();
         let test_files = pkg.test_files.clone();
@@ -545,7 +653,13 @@ pub fn convert_mdb_to_json(module: &ModuleDB) -> ModuleDBJSON {
                 None => {
                     let alias = dep.path.rel_path.components.last();
                     match alias {
-                        None => dep.path.module_name.split('/').last().unwrap().to_string(),
+                        None => dep
+                            .path
+                            .module_name
+                            .split('/')
+                            .next_back()
+                            .unwrap()
+                            .to_string(),
                         Some(x) => x.to_string(),
                     }
                 }
@@ -554,6 +668,11 @@ pub fn convert_mdb_to_json(module: &ModuleDB) -> ModuleDBJSON {
             deps.push(AliasJSON {
                 path: dep.path.make_full_path(),
                 alias,
+                fspath: module
+                    .get_package_by_name(&dep.path.make_full_path())
+                    .root_path
+                    .display()
+                    .to_string(),
             });
         }
 
@@ -563,7 +682,13 @@ pub fn convert_mdb_to_json(module: &ModuleDB) -> ModuleDBJSON {
                 None => {
                     let alias = dep.path.rel_path.components.last();
                     match alias {
-                        None => dep.path.module_name.split('/').last().unwrap().to_string(),
+                        None => dep
+                            .path
+                            .module_name
+                            .split('/')
+                            .next_back()
+                            .unwrap()
+                            .to_string(),
                         Some(x) => x.to_string(),
                     }
                 }
@@ -572,6 +697,11 @@ pub fn convert_mdb_to_json(module: &ModuleDB) -> ModuleDBJSON {
             wbtest_deps.push(AliasJSON {
                 path: dep.path.make_full_path(),
                 alias,
+                fspath: module
+                    .get_package_by_name(&dep.path.make_full_path())
+                    .root_path
+                    .display()
+                    .to_string(),
             });
         }
 
@@ -581,7 +711,13 @@ pub fn convert_mdb_to_json(module: &ModuleDB) -> ModuleDBJSON {
                 None => {
                     let alias = dep.path.rel_path.components.last();
                     match alias {
-                        None => dep.path.module_name.split('/').last().unwrap().to_string(),
+                        None => dep
+                            .path
+                            .module_name
+                            .split('/')
+                            .next_back()
+                            .unwrap()
+                            .to_string(),
                         Some(x) => x.to_string(),
                     }
                 }
@@ -590,6 +726,11 @@ pub fn convert_mdb_to_json(module: &ModuleDB) -> ModuleDBJSON {
             test_deps.push(AliasJSON {
                 path: dep.path.make_full_path(),
                 alias,
+                fspath: module
+                    .get_package_by_name(&dep.path.make_full_path())
+                    .root_path
+                    .display()
+                    .to_string(),
             });
         }
 
@@ -655,6 +796,9 @@ pub struct MoonMod {
 
     pub include: Option<Vec<String>>,
     pub exclude: Option<Vec<String>>,
+
+    pub scripts: Option<IndexMap<String, String>>,
+    pub __moonbit_unstable_prebuild: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -740,6 +884,19 @@ pub struct MoonModJSON {
     /// Files to exclude when publishing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Vec<String>>,
+
+    /// Scripts related to the current module.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<std::collections::HashMap<String, String>>")]
+    pub scripts: Option<IndexMap<String, String>>,
+
+    /// **Experimental:** A relative path to the pre-build configuration script.
+    ///
+    /// The script should be a **JavaScript or Python** file that is able to be
+    /// executed with vanilla Node.JS or Python interpreter. Since this is
+    /// experimental, the API may change at any time without warning.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub __moonbit_unstable_prebuild: Option<String>,
 }
 
 impl TryFrom<MoonModJSON> for MoonMod {
@@ -789,6 +946,10 @@ impl TryFrom<MoonModJSON> for MoonMod {
 
             include: j.include,
             exclude: j.exclude,
+
+            scripts: j.scripts,
+
+            __moonbit_unstable_prebuild: j.__moonbit_unstable_prebuild,
         })
     }
 }
@@ -818,6 +979,10 @@ pub fn convert_module_to_mod_json(m: MoonMod) -> MoonModJSON {
 
         include: m.include,
         exclude: m.exclude,
+
+        scripts: m.scripts,
+
+        __moonbit_unstable_prebuild: m.__moonbit_unstable_prebuild,
     }
 }
 

@@ -21,16 +21,20 @@ use colored::Colorize;
 use indexmap::IndexMap;
 use log::info;
 use moonutil::common::{
-    get_desc_name, DriverKind, GeneratedTestDriver, TargetBackend, BLACKBOX_TEST_PATCH,
-    MOONBITLANG_CORE, MOONBITLANG_COVERAGE, O_EXT, WHITEBOX_TEST_PATCH,
+    get_desc_name, DriverKind, GeneratedTestDriver, RunMode, TargetBackend, BLACKBOX_TEST_PATCH,
+    MOONBITLANG_CORE, MOONBITLANG_COVERAGE, O_EXT, SUB_PKG_POSTFIX, WHITEBOX_TEST_PATCH,
 };
+use moonutil::compiler_flags::CC;
 use moonutil::module::ModuleDB;
 use moonutil::package::Package;
 use moonutil::path::{ImportPath, PathComponent};
 use petgraph::graph::NodeIndex;
 
 use super::cmd_builder::CommandBuilder;
-use super::util::self_in_test_import;
+use super::gen_build::{
+    gen_build_interface_item, replace_virtual_pkg_core_with_impl_pkg_core, BuildInterfaceItem,
+};
+use super::util::{calc_link_args, self_in_test_import};
 use super::{is_self_coverage_lib, is_skip_coverage_lib};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -41,11 +45,11 @@ use n2::graph::{self as n2graph, Build, BuildIns, BuildOuts, FileLoc};
 use n2::load::State;
 use n2::smallmap::SmallMap;
 
-#[cfg(unix)]
-use crate::gen::gen_build::gen_compile_shared_runtime_command;
+use crate::gen::gen_build::gen_build_interface_command;
 use crate::gen::gen_build::{
     gen_archive_stub_to_static_lib_command, gen_compile_exe_command, gen_compile_runtime_command,
-    gen_compile_stub_command, gen_link_exe_command,
+    gen_compile_shared_runtime_command, gen_compile_stub_command, gen_link_exe_command,
+    gen_link_stub_to_dynamic_lib_command,
 };
 use crate::gen::n2_errors::{N2Error, N2ErrorKind};
 use crate::gen::{coverage_args, MiAlias};
@@ -63,10 +67,14 @@ pub struct RuntestDepItem {
     pub alert_list: Option<String>,
     pub is_main: bool,
     pub is_third_party: bool,
+    pub is_internal_test: bool,
     pub is_whitebox_test: bool,
     pub is_blackbox_test: bool,
     pub no_mi: bool,
     pub patch_file: Option<PathBuf>,
+
+    // which virtual pkg to implement (mi path, virtual pkg name, virtual pkg path)
+    pub mi_of_virtual_pkg_to_impl: Option<(String, String, String)>,
 }
 
 type RuntestLinkDepItem = moonutil::package::LinkDepItem;
@@ -78,10 +86,15 @@ pub struct RuntestDriverItem {
     pub driver_file: String,
     pub files_may_contain_test_block: Vec<String>,
     pub patch_file: Option<PathBuf>,
+    pub single_test_file: Option<PathBuf>,
 }
 
 #[derive(Debug)]
 pub struct N2RuntestInput {
+    // for virtual pkg
+    pub build_interface_items: Vec<BuildInterfaceItem>,
+    pub build_default_virtual_items: Vec<RuntestDepItem>,
+
     pub build_items: Vec<RuntestDepItem>,
     pub link_items: Vec<RuntestLinkDepItem>, // entry points
     pub test_drivers: Vec<RuntestDriverItem>,
@@ -118,6 +131,7 @@ pub fn add_coverage_to_core_if_needed(
                         is_3rd: false,
                     },
                     alias: None,
+                    sub_package: false,
                 });
             }
 
@@ -161,6 +175,7 @@ pub fn gen_package_test_driver(
                 files_may_contain_test_block,
                 driver_kind: DriverKind::Internal,
                 patch_file: pkg.patch_file.clone(),
+                single_test_file: None,
             })
         }
         GeneratedTestDriver::BlackboxTest(it) => {
@@ -180,6 +195,15 @@ pub fn gen_package_test_driver(
                 files_may_contain_test_block,
                 driver_kind: DriverKind::Blackbox,
                 patch_file: pkg.patch_file.clone().or(pkg.doc_test_patch_file.clone()),
+                single_test_file: if pkg.full_name() == moonutil::common::SINGLE_FILE_TEST_PACKAGE {
+                    if pkg.doc_test_patch_file.is_some() {
+                        pkg.doc_test_patch_file.clone()
+                    } else {
+                        Some(pkg.test_files.keys().next().unwrap().clone())
+                    }
+                } else {
+                    None
+                },
             })
         }
         GeneratedTestDriver::WhiteboxTest(it) => {
@@ -197,6 +221,7 @@ pub fn gen_package_test_driver(
                 files_may_contain_test_block,
                 driver_kind: DriverKind::Whitebox,
                 patch_file: pkg.patch_file.clone(),
+                single_test_file: None,
             })
         }
     }
@@ -222,7 +247,7 @@ pub fn gen_package_core(
 
     let mut mi_deps = vec![];
     for dep in pkg.imports.iter() {
-        let full_import_name = dep.path.make_full_path();
+        let mut full_import_name = dep.path.make_full_path();
         if !m.contains_package(&full_import_name) {
             bail!(
                 "{}: the imported package `{}` could not be located.",
@@ -233,6 +258,9 @@ pub fn gen_package_core(
                 full_import_name,
             );
         }
+        if dep.sub_package {
+            full_import_name = format!("{}{}", full_import_name, SUB_PKG_POSTFIX);
+        }
         let cur_pkg = m.get_package_by_name(&full_import_name);
         let d = cur_pkg.artifact.with_extension("mi");
         let alias = dep.alias.clone().unwrap_or(cur_pkg.last_name().into());
@@ -242,8 +270,31 @@ pub fn gen_package_core(
         });
     }
 
-    let package_full_name = pkg.full_name();
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    };
+
     let package_source_dir = pkg.root_path.to_string_lossy().into_owned();
+
+    let impl_virtual_pkg = if let Some(impl_virtual_pkg) = pkg.implement.as_ref() {
+        let impl_virtual_pkg = m.get_package_by_name(impl_virtual_pkg);
+
+        let virtual_pkg_mi = impl_virtual_pkg
+            .artifact
+            .with_extension("mi")
+            .display()
+            .to_string();
+
+        Some((
+            virtual_pkg_mi,
+            impl_virtual_pkg.full_name(),
+            impl_virtual_pkg.root_path.display().to_string(),
+        ))
+    } else {
+        None
+    };
 
     Ok(RuntestDepItem {
         core_out: core_out.display().to_string(),
@@ -255,12 +306,14 @@ pub fn gen_package_core(
         package_source_dir,
         warn_list: pkg.warn_list.clone(),
         alert_list: pkg.alert_list.clone(),
-        is_main: false,
+        is_main: pkg.is_main,
         is_third_party: pkg.is_third_party,
+        is_internal_test: false,
         is_whitebox_test: false,
         is_blackbox_test: false,
         no_mi: false,
         patch_file: None,
+        mi_of_virtual_pkg_to_impl: impl_virtual_pkg,
     })
 }
 
@@ -296,7 +349,7 @@ pub fn gen_package_internal_test(
 
     let mut mi_deps = vec![];
     for dep in pkg.imports.iter() {
-        let full_import_name = dep.path.make_full_path();
+        let mut full_import_name = dep.path.make_full_path();
         if !m.contains_package(&full_import_name) {
             bail!(
                 "{}: the imported package `{}` could not be located.",
@@ -307,6 +360,9 @@ pub fn gen_package_internal_test(
                 full_import_name,
             );
         }
+        if dep.sub_package {
+            full_import_name = format!("{}{}", full_import_name, SUB_PKG_POSTFIX);
+        }
         let cur_pkg = m.get_package_by_name(&full_import_name);
         let d = cur_pkg.artifact.with_extension("mi");
         let alias = dep.alias.clone().unwrap_or(cur_pkg.last_name().into());
@@ -316,7 +372,12 @@ pub fn gen_package_internal_test(
         });
     }
 
-    let package_full_name = pkg.full_name();
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    };
+
     let package_source_dir = pkg.root_path.to_string_lossy().into_owned();
 
     Ok(RuntestDepItem {
@@ -331,10 +392,12 @@ pub fn gen_package_internal_test(
         alert_list: pkg.alert_list.clone(),
         is_main: true,
         is_third_party: pkg.is_third_party,
+        is_internal_test: true,
         is_whitebox_test: false,
         is_blackbox_test: false,
         no_mi: true,
         patch_file,
+        mi_of_virtual_pkg_to_impl: None,
     })
 }
 
@@ -378,7 +441,7 @@ pub fn gen_package_whitebox_test(
 
     let mut mi_deps = vec![];
     for dep in pkg.imports.iter().chain(pkg.wbtest_imports.iter()) {
-        let full_import_name = dep.path.make_full_path();
+        let mut full_import_name = dep.path.make_full_path();
         if !m.contains_package(&full_import_name) {
             bail!(
                 "{}: the imported package `{}` could not be located.",
@@ -389,6 +452,9 @@ pub fn gen_package_whitebox_test(
                 full_import_name,
             );
         }
+        if dep.sub_package {
+            full_import_name = format!("{}{}", full_import_name, SUB_PKG_POSTFIX);
+        }
         let cur_pkg = m.get_package_by_name(&full_import_name);
         let d = cur_pkg.artifact.with_extension("mi");
         let alias = dep.alias.clone().unwrap_or(cur_pkg.last_name().into());
@@ -398,7 +464,12 @@ pub fn gen_package_whitebox_test(
         });
     }
 
-    let package_full_name = pkg.full_name();
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    };
+
     let package_source_dir = pkg.root_path.to_string_lossy().into_owned();
 
     Ok(RuntestDepItem {
@@ -413,10 +484,12 @@ pub fn gen_package_whitebox_test(
         alert_list: pkg.alert_list.clone(),
         is_main: true,
         is_third_party: pkg.is_third_party,
+        is_internal_test: false,
         is_whitebox_test: true,
         is_blackbox_test: false,
         no_mi: true,
         patch_file,
+        mi_of_virtual_pkg_to_impl: None,
     })
 }
 
@@ -487,7 +560,7 @@ pub fn gen_package_blackbox_test(
     }
 
     for dep in pkg.imports.iter().chain(pkg.test_imports.iter()) {
-        let full_import_name = dep.path.make_full_path();
+        let mut full_import_name = dep.path.make_full_path();
         if !m.contains_package(&full_import_name) {
             bail!(
                 "{}: the imported package `{}` could not be located.",
@@ -497,6 +570,9 @@ pub fn gen_package_blackbox_test(
                     .display(),
                 full_import_name,
             );
+        }
+        if dep.sub_package {
+            full_import_name = format!("{}{}", full_import_name, SUB_PKG_POSTFIX);
         }
         let cur_pkg = m.get_package_by_name(&full_import_name);
         let d = cur_pkg.artifact.with_extension("mi");
@@ -524,10 +600,12 @@ pub fn gen_package_blackbox_test(
         alert_list: pkg.alert_list.clone(),
         is_main: true,
         is_third_party: pkg.is_third_party,
+        is_internal_test: false,
         is_whitebox_test: false,
         is_blackbox_test: true,
         no_mi: true,
         patch_file,
+        mi_of_virtual_pkg_to_impl: None,
     })
 }
 
@@ -601,7 +679,7 @@ fn get_package_sources(pkg_topo_order: &[&Package]) -> Vec<(String, String)> {
 pub fn gen_link_internal_test(
     m: &ModuleDB,
     pkg: &Package,
-    _moonc_opt: &MooncOpt,
+    moonc_opt: &MooncOpt,
 ) -> anyhow::Result<RuntestLinkDepItem> {
     let out = pkg
         .artifact
@@ -620,9 +698,23 @@ pub fn gen_link_internal_test(
         };
         core_deps.push(d.display().to_string());
     }
-    let package_sources = get_package_sources(&pkg_topo_order);
 
-    let package_full_name = pkg.full_name();
+    let mut core_core_and_abort_core = if moonc_opt.nostd {
+        vec![]
+    } else {
+        moonutil::moon_dir::core_core(moonc_opt.link_opt.target_backend)
+    };
+    core_core_and_abort_core.extend(core_deps);
+    let mut core_deps = core_core_and_abort_core;
+
+    let package_sources = get_package_sources(&pkg_topo_order);
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    };
+
+    replace_virtual_pkg_core_with_impl_pkg_core(m, pkg, &mut core_deps)?;
 
     Ok(RuntestLinkDepItem {
         out: out.display().to_string(),
@@ -630,17 +722,17 @@ pub fn gen_link_internal_test(
         package_full_name,
         package_sources,
         package_path: pkg.root_path.clone(),
-        link: pkg.link.clone(),
+        link: Some(calc_link_args(m, pkg)),
         install_path: None,
         bin_name: None,
-        stub_static_lib: pkg.stub_static_lib.clone(),
+        stub_lib: pkg.stub_lib.clone(),
     })
 }
 
 pub fn gen_link_whitebox_test(
     m: &ModuleDB,
     pkg: &Package,
-    _moonc_opt: &MooncOpt,
+    moonc_opt: &MooncOpt,
 ) -> anyhow::Result<RuntestLinkDepItem> {
     let out = pkg
         .artifact
@@ -660,9 +752,22 @@ pub fn gen_link_whitebox_test(
         core_deps.push(d.display().to_string());
     }
 
-    let package_sources = get_package_sources(&pkg_topo_order);
+    let mut core_core_and_abort_core = if moonc_opt.nostd {
+        vec![]
+    } else {
+        moonutil::moon_dir::core_core(moonc_opt.link_opt.target_backend)
+    };
+    core_core_and_abort_core.extend(core_deps);
+    let mut core_deps = core_core_and_abort_core;
 
-    let package_full_name = pkg.full_name();
+    let package_sources = get_package_sources(&pkg_topo_order);
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    };
+
+    replace_virtual_pkg_core_with_impl_pkg_core(m, pkg, &mut core_deps)?;
 
     Ok(RuntestLinkDepItem {
         out: out.display().to_string(),
@@ -670,17 +775,17 @@ pub fn gen_link_whitebox_test(
         package_full_name,
         package_sources,
         package_path: pkg.root_path.clone(),
-        link: pkg.link.clone(),
+        link: Some(calc_link_args(m, pkg)),
         install_path: None,
         bin_name: None,
-        stub_static_lib: pkg.stub_static_lib.clone(),
+        stub_lib: pkg.stub_lib.clone(),
     })
 }
 
 pub fn gen_link_blackbox_test(
     m: &ModuleDB,
     pkg: &Package,
-    _moonc_opt: &MooncOpt,
+    moonc_opt: &MooncOpt,
 ) -> anyhow::Result<RuntestLinkDepItem> {
     let pkgname = pkg.artifact.file_stem().unwrap().to_str().unwrap();
     let out = pkg
@@ -710,6 +815,14 @@ pub fn gen_link_blackbox_test(
         core_deps.push(d.display().to_string());
     }
 
+    let mut core_core_and_abort_core = if moonc_opt.nostd {
+        vec![]
+    } else {
+        moonutil::moon_dir::core_core(moonc_opt.link_opt.target_backend)
+    };
+    core_core_and_abort_core.extend(core_deps);
+    let mut core_deps = core_core_and_abort_core;
+
     let mut package_sources = get_package_sources(&pkg_topo_order);
 
     // add blackbox test pkg into `package_sources`, which will be passed to `-pkg-source` in `link-core`
@@ -719,7 +832,13 @@ pub fn gen_link_blackbox_test(
     ));
 
     // this will be passed to link-core `-main`
-    let package_full_name = pkg.full_name() + "_blackbox_test";
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    } + "_blackbox_test";
+
+    replace_virtual_pkg_core_with_impl_pkg_core(m, pkg, &mut core_deps)?;
 
     Ok(RuntestLinkDepItem {
         out: out.display().to_string(),
@@ -727,10 +846,10 @@ pub fn gen_link_blackbox_test(
         package_full_name,
         package_sources,
         package_path: pkg.root_path.clone(),
-        link: pkg.link.clone(),
+        link: Some(calc_link_args(m, pkg)),
         install_path: None,
         bin_name: None,
-        stub_static_lib: pkg.stub_static_lib.clone(),
+        stub_lib: pkg.stub_lib.clone(),
     })
 }
 
@@ -751,6 +870,8 @@ pub fn gen_runtest(
     moonc_opt: &MooncOpt,
     moonbuild_opt: &MoonbuildOpt,
 ) -> anyhow::Result<N2RuntestInput> {
+    let mut build_interface_items = vec![];
+    let mut build_default_virtual_items = vec![];
     let mut build_items = vec![];
     let mut link_items = vec![];
     let mut test_drivers = vec![];
@@ -778,23 +899,30 @@ pub fn gen_runtest(
         .unwrap_or((None, None, None));
 
     for (pkgname, pkg) in m.get_all_packages().iter() {
-        if pkg.is_main {
-            continue;
-        }
-
-        build_items.push(gen_package_core(m, pkg, moonc_opt)?);
-        if pkg.stub_static_lib.is_some() {
+        if pkg.stub_lib.is_some() {
             compile_stub_items.push(RuntestLinkDepItem {
                 out: pkg.artifact.with_extension(O_EXT).display().to_string(),
                 core_deps: vec![],
                 package_sources: vec![],
                 package_full_name: pkg.full_name(),
                 package_path: pkg.root_path.clone(),
-                link: pkg.link.clone(),
+                link: Some(calc_link_args(m, pkg)),
                 install_path: None,
                 bin_name: None,
-                stub_static_lib: pkg.stub_static_lib.clone(),
+                stub_lib: pkg.stub_lib.clone(),
             });
+        }
+
+        if let Some(v) = pkg.virtual_pkg.as_ref() {
+            // don't need to build for virtual pkg in core since it is already bundled
+            if !(pkg.full_name().starts_with(MOONBITLANG_CORE) && pkg.is_third_party) {
+                build_interface_items.push(gen_build_interface_item(m, pkg)?);
+                if v.has_default {
+                    build_default_virtual_items.push(gen_package_core(m, pkg, moonc_opt)?);
+                }
+            }
+        } else {
+            build_items.push(gen_package_core(m, pkg, moonc_opt)?);
         }
 
         if pkg.is_third_party {
@@ -807,17 +935,32 @@ pub fn gen_runtest(
             }
         }
 
-        // todo: only generate the test driver when there is test block exist
-        for item in pkg.generated_test_drivers.iter() {
-            if let GeneratedTestDriver::InternalTest(_) = item {
-                test_drivers.push(gen_package_test_driver(item, pkg)?);
-                build_items.push(gen_package_internal_test(
-                    m,
-                    pkg,
-                    moonc_opt,
-                    internal_patch_file.clone(),
-                )?);
-                link_items.push(gen_link_internal_test(m, pkg, moonc_opt)?);
+        let has_internal_test = {
+            let mut res = false;
+            for (path, _) in &pkg.files {
+                let content = std::fs::read_to_string(path)?;
+                for line in content.lines() {
+                    if line.starts_with("test") {
+                        res = true;
+                        break;
+                    }
+                }
+            }
+            res
+        };
+
+        if has_internal_test {
+            for item in pkg.generated_test_drivers.iter() {
+                if let GeneratedTestDriver::InternalTest(_) = item {
+                    test_drivers.push(gen_package_test_driver(item, pkg)?);
+                    build_items.push(gen_package_internal_test(
+                        m,
+                        pkg,
+                        moonc_opt,
+                        internal_patch_file.clone(),
+                    )?);
+                    link_items.push(gen_link_internal_test(m, pkg, moonc_opt)?);
+                }
             }
         }
 
@@ -858,6 +1001,8 @@ pub fn gen_runtest(
     }
 
     Ok(N2RuntestInput {
+        build_interface_items,
+        build_default_virtual_items,
         build_items,
         link_items,
         test_drivers,
@@ -869,6 +1014,7 @@ pub fn gen_runtest_build_command(
     graph: &mut n2graph::Graph,
     item: &RuntestDepItem,
     moonc_opt: &MooncOpt,
+    need_build_default_virtual: bool,
 ) -> Build {
     let core_output_id = graph.files.id_from_canonical(item.core_out.clone());
     let mi_output_id = graph.files.id_from_canonical(item.mi_out.clone());
@@ -880,6 +1026,18 @@ pub fn gen_runtest_build_command(
 
     let mut inputs = item.mbt_deps.clone();
     inputs.extend(item.mi_deps.iter().map(|a| a.name.clone()));
+    // add $pkgname.mi as input if need_build_virtual since it is used by --check-mi
+    if need_build_default_virtual {
+        inputs.push(
+            PathBuf::from(&item.core_out)
+                .with_extension("mi")
+                .display()
+                .to_string(),
+        );
+    }
+    if let Some((mi_path, _, _)) = item.mi_of_virtual_pkg_to_impl.as_ref() {
+        inputs.push(mi_path.clone());
+    }
     let input_ids = inputs
         .into_iter()
         .map(|f| graph.files.id_from_canonical(f))
@@ -901,7 +1059,7 @@ pub fn gen_runtest_build_command(
     };
 
     let outs = BuildOuts {
-        ids: if item.no_mi {
+        ids: if item.no_mi || need_build_default_virtual {
             vec![core_output_id]
         } else {
             vec![core_output_id, mi_output_id]
@@ -933,6 +1091,7 @@ pub fn gen_runtest_build_command(
         .lazy_args_with_cond(item.alert_list.is_some(), || {
             vec!["-alert".to_string(), item.alert_list.clone().unwrap()]
         })
+        .args_with_cond(item.is_third_party, ["-w", "-a", "-alert", "-all"])
         .arg("-o")
         .arg(&item.core_out)
         .arg("-pkg")
@@ -971,6 +1130,33 @@ pub fn gen_runtest_build_command(
                 item.patch_file.as_ref().unwrap().display().to_string(),
             ]
         })
+        .args_with_cond(
+            need_build_default_virtual,
+            vec![
+                "-check-mi".to_string(),
+                PathBuf::from(&item.core_out)
+                    .with_extension("mi")
+                    .display()
+                    .to_string(),
+                "-no-mi".to_string(),
+            ],
+        )
+        .lazy_args_with_cond(item.mi_of_virtual_pkg_to_impl.as_ref().is_some(), || {
+            let (mi_path, pkg_name, pkg_path) = item.mi_of_virtual_pkg_to_impl.as_ref().unwrap();
+            vec![
+                "-check-mi".to_string(),
+                mi_path.clone(),
+                "-impl-virtual".to_string(),
+                // implementation package should not been import so here don't emit .mi
+                "-no-mi".to_string(),
+                "-pkg-sources".to_string(),
+                format!("{}:{}", &pkg_name, &pkg_path,),
+            ]
+        })
+        .arg_with_cond(
+            item.is_internal_test || item.is_whitebox_test || item.is_blackbox_test,
+            "-test-mode",
+        )
         .build();
     log::debug!("Command: {}", command);
     build.cmdline = Some(command);
@@ -1026,12 +1212,6 @@ pub fn gen_runtest_link_command(
 
     let command = CommandBuilder::new("moonc")
         .arg("link-core")
-        .arg_with_cond(
-            !moonc_opt.nostd,
-            moonutil::moon_dir::core_core(moonc_opt.link_opt.target_backend)
-                .to_str()
-                .unwrap(),
-        )
         .args(&item.core_deps)
         .arg("-main")
         .arg(&item.package_full_name)
@@ -1072,6 +1252,13 @@ pub fn gen_runtest_link_command(
         // .arg_with_cond(!debug_flag && strip_flag, "")
         .arg_with_cond(moonc_opt.link_opt.source_map, "-source-map")
         .args(moonc_opt.extra_link_opt.iter())
+        // note: this is a workaround for windows cl, x86_64-pc-windows-gnu also need to consider
+        .args_with_cond(
+            cfg!(target_os = "windows")
+                && moonc_opt.link_opt.target_backend == TargetBackend::LLVM
+                && CC::default().is_msvc(),
+            ["-llvm-target", "x86_64-pc-windows-msvc"],
+        )
         .build();
     log::debug!("Command: {}", command);
     build.cmdline = Some(command);
@@ -1094,49 +1281,44 @@ pub fn gen_n2_runtest_state(
     log::debug!("input: {:#?}", input);
 
     for item in input.build_items.iter() {
-        let build = gen_runtest_build_command(&mut graph, item, moonc_opt);
+        let build = gen_runtest_build_command(&mut graph, item, moonc_opt, false);
         graph.add_build(build)?;
     }
 
     let is_native_backend = moonc_opt.link_opt.target_backend == TargetBackend::Native;
+    let is_llvm_backend = moonc_opt.link_opt.target_backend == TargetBackend::LLVM;
 
-    let mut runtime_o_path = String::new();
+    // compile runtime.o or libruntime.so
+    let mut runtime_path = None;
 
-    if is_native_backend {
-        #[cfg(unix)]
+    if is_native_backend || is_llvm_backend {
         fn gen_shared_runtime(
             graph: &mut n2graph::Graph,
             target_dir: &std::path::Path,
             default: &mut Vec<n2graph::FileId>,
-        ) -> anyhow::Result<String> {
+        ) -> anyhow::Result<PathBuf> {
             let (build, path) = gen_compile_shared_runtime_command(graph, target_dir);
             graph.add_build(build)?;
             // we explicitly add it to default because shared runtime is not a target or depended by any target
-            default.push(graph.files.id_from_canonical(path.clone()));
+            default.push(graph.files.id_from_canonical(path.display().to_string()));
             Ok(path)
         }
 
         fn gen_runtime(
             graph: &mut n2graph::Graph,
             target_dir: &std::path::Path,
-        ) -> anyhow::Result<String> {
+        ) -> anyhow::Result<PathBuf> {
             let (build, path) = gen_compile_runtime_command(graph, target_dir);
             graph.add_build(build)?;
             Ok(path)
         }
 
-        #[cfg(unix)]
-        if moonbuild_opt.use_tcc_run {
-            gen_shared_runtime(&mut graph, &moonbuild_opt.target_dir, &mut default)?;
+        runtime_path = Some(if moonbuild_opt.use_tcc_run {
+            gen_shared_runtime(&mut graph, &moonbuild_opt.target_dir, &mut default)?
         } else {
-            runtime_o_path = gen_runtime(&mut graph, &moonbuild_opt.target_dir)?;
-        }
-        #[cfg(windows)]
-        {
-            runtime_o_path = gen_runtime(&mut graph, &moonbuild_opt.target_dir)?;
-        }
+            gen_runtime(&mut graph, &moonbuild_opt.target_dir)?
+        });
     }
-    let is_llvm_backend = moonc_opt.link_opt.target_backend == TargetBackend::LLVM;
 
     for item in input.link_items.iter() {
         let (build, fid) = gen_runtest_link_command(&mut graph, item, moonc_opt);
@@ -1144,13 +1326,24 @@ pub fn gen_n2_runtest_state(
         graph.add_build(build)?;
 
         if is_native_backend && !moonbuild_opt.use_tcc_run {
-            let (build, fid) =
-                gen_compile_exe_command(&mut graph, item, moonc_opt, runtime_o_path.clone());
+            let (build, fid) = gen_compile_exe_command(
+                &mut graph,
+                item,
+                moonc_opt,
+                moonbuild_opt,
+                runtime_path.as_ref().unwrap().display().to_string(),
+            );
             default_fid = fid;
             graph.add_build(build)?;
         }
         if is_llvm_backend {
-            let (build, fid) = gen_link_exe_command(&mut graph, item, moonc_opt);
+            let (build, fid) = gen_link_exe_command(
+                &mut graph,
+                item,
+                moonc_opt,
+                moonbuild_opt,
+                runtime_path.as_ref().unwrap().display().to_string(),
+            );
             graph.add_build(build)?;
             default_fid = fid;
         }
@@ -1162,28 +1355,51 @@ pub fn gen_n2_runtest_state(
         graph.add_build(build)?;
     }
 
+    for item in input.build_interface_items.iter() {
+        let (build, _) = gen_build_interface_command(&mut graph, item, moonc_opt);
+        graph.add_build(build)?;
+    }
+
+    for item in input.build_default_virtual_items.iter() {
+        let build = gen_runtest_build_command(&mut graph, item, moonc_opt, true);
+        graph.add_build(build)?;
+    }
+
     if is_native_backend {
         for item in input.compile_stub_items.iter() {
-            let builds = gen_compile_stub_command(&mut graph, item, moonc_opt);
+            let builds = gen_compile_stub_command(&mut graph, item, moonc_opt, moonbuild_opt);
             for (build, _fid) in builds {
                 graph.add_build(build)?;
                 // don't need to add fid to default, since it would be deps of test.exe
             }
-            let (build, _) = gen_archive_stub_to_static_lib_command(&mut graph, item);
-            graph.add_build(build)?;
+            if !moonbuild_opt.use_tcc_run {
+                let (build, _) =
+                    gen_archive_stub_to_static_lib_command(&mut graph, item, moonc_opt);
+                graph.add_build(build)?;
+            } else {
+                let (build, fid) = gen_link_stub_to_dynamic_lib_command(
+                    &mut graph,
+                    item,
+                    runtime_path.as_ref().unwrap(),
+                    moonc_opt,
+                    moonbuild_opt,
+                );
+                graph.add_build(build)?;
+                default.push(fid);
+            }
         }
     }
 
     if default.is_empty() {
-        eprintln!(
-            "{}: no test entry found(test block in main package is not support for now)",
-            "Warning".yellow().bold()
-        );
+        eprintln!("{}: no test entry found.", "Warning".yellow().bold());
         std::process::exit(0);
     }
 
     let mut hashes = n2graph::Hashes::default();
     let n2_db_path = &moonbuild_opt.target_dir.join("build.moon_db");
+    if !n2_db_path.parent().unwrap().exists() {
+        std::fs::create_dir_all(n2_db_path.parent().unwrap()).unwrap();
+    }
     let db = n2::db::open(n2_db_path, &mut graph, &mut hashes).map_err(|e| N2Error {
         source: N2ErrorKind::DBOpenError(e),
     })?;
@@ -1268,6 +1484,23 @@ fn gen_generate_test_driver_command(
         vec![
             "--patch-file".to_string(),
             patch_file.unwrap().display().to_string(),
+        ]
+    })
+    .args([
+        "--mode",
+        match moonbuild_opt.run_mode {
+            RunMode::Bench => "bench",
+            _ => "test",
+        },
+    ])
+    .lazy_args_with_cond(item.single_test_file.is_some(), || {
+        vec![
+            "--single-test-file".to_string(),
+            item.single_test_file
+                .as_ref()
+                .unwrap()
+                .display()
+                .to_string(),
         ]
     })
     .build();

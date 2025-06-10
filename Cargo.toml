@@ -26,7 +26,7 @@ rust-version = "1.80"
 edition = "2021"
 
 [workspace.dependencies]
-n2 = { git = "https://github.com/moonbitlang/n2.git", rev = "3e74c796d177f7ee6d9bb3ce6c400060fc50e24d" }
+n2 = { git = "https://github.com/moonbitlang/n2.git", rev = "7fb72d14baba93aeff637f6199cd8145921fd715" }
 moonbuild = { path = "./crates/moonbuild", version = "*" }
 mooncake = { path = "./crates/mooncake", version = "*" }
 moonutil = { path = "./crates/moonutil", version = "*" }
@@ -52,6 +52,7 @@ petgraph = { version = "0.6.4", features = [
 serde = { version = "1.0.163", features = ["derive"] }
 serde_json = { version = "1.0.97", features = ["preserve_order"] }
 serde_json_lenient = { version = "0.2.1", features = ["preserve_order"] }
+serde_yaml = "0.9.33"
 sysinfo = "0.29.9"
 tokio = { version = "1.34.0", features = [
     "rt-multi-thread",
@@ -96,6 +97,9 @@ regex = { version = "1.10.3", default-features = false, features = ["std"] }
 rand = "0.8.5"
 base64 = "0.22.1"
 once_cell = "1.20.3"
+derive_builder = "0.20.2"
+pulldown-cmark = "0.13.0"
+shlex = "1.3.0"
 
 [profile.release]
 debug = false

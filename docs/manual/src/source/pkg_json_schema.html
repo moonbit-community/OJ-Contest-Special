@@ -61,6 +61,12 @@
         "null"
       ]
     },
+    "implement": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "import": {
       "description": "Imported packages of the package",
       "anyOf": [
@@ -104,6 +110,15 @@
         "type": "string"
       }
     },
+    "overrides": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
     "pre-build": {
       "description": "Command for moon generate",
       "type": [
@@ -113,6 +128,17 @@
       "items": {
         "$ref": "#/definitions/MoonPkgGenerate"
       }
+    },
+    "sub-package": {
+      "description": "Specify whether this package is a sub package or not",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SubPackageInMoonPkgJSON"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "supported-targets": {
       "type": [
@@ -149,6 +175,16 @@
       "type": [
         "boolean",
         "null"
+      ]
+    },
+    "virtual": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/VirtualPkg"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "warn-list": {
@@ -306,6 +342,24 @@
           "items": {
             "type": "string"
           }
+        },
+        "stub-cc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stub-cc-flags": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stub-cc-link-flags": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -349,6 +403,12 @@
             "path": {
               "type": "string"
             },
+            "sub-package": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "value": {
               "type": [
                 "array",
@@ -374,6 +434,41 @@
           }
         }
       ]
+    },
+    "SubPackageInMoonPkgJSON": {
+      "type": "object",
+      "required": [
+        "files"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "import": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PkgJSONImport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "VirtualPkg": {
+      "type": "object",
+      "required": [
+        "has-default"
+      ],
+      "properties": {
+        "has-default": {
+          "type": "boolean"
+        }
+      }
     },
     "WasmGcLinkConfig": {
       "type": "object",

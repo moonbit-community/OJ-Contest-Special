@@ -27,6 +27,7 @@ pub mod util;
 // WORKAROUND for do not test coverage on coverage library itself
 const MOON_CORE_COVERAGE_LIB: &str = "moonbitlang/core/coverage";
 const MOON_CORE_BUILTIN_LIB: &str = "moonbitlang/core/builtin";
+const MOON_CORE_ABORT_LIB: &str = "moonbitlang/core/abort";
 
 #[test]
 fn test_start_with() {
@@ -35,7 +36,7 @@ fn test_start_with() {
     assert!(MOON_CORE_BUILTIN_LIB.starts_with(MOONBITLANG_CORE));
 }
 
-static SKIP_COVERAGE_LIBS: &[&str] = &[];
+static SKIP_COVERAGE_LIBS: &[&str] = &[MOON_CORE_ABORT_LIB];
 static SELF_COVERAGE_LIBS: &[&str] = &[MOON_CORE_BUILTIN_LIB, MOON_CORE_COVERAGE_LIB];
 
 fn is_skip_coverage_lib(name: &str) -> bool {

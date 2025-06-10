@@ -22,6 +22,7 @@ use moonbuild::entry;
 use mooncake::pkg::sync::auto_sync;
 use moonutil::common::lower_surface_targets;
 use moonutil::common::FileLock;
+use moonutil::common::PrePostBuild;
 use moonutil::common::RunMode;
 use moonutil::common::SurfaceTarget;
 use moonutil::common::TargetBackend;
@@ -37,7 +38,7 @@ use moonutil::mooncakes::sync::AutoSyncFlags;
 use moonutil::mooncakes::RegistryConfig;
 use n2::trace;
 
-use super::pre_build::scan_with_pre_build;
+use super::pre_build::scan_with_x_build;
 use super::{BuildFlags, UniversalFlags};
 
 /// Run a main package
@@ -130,11 +131,11 @@ fn run_single_mbt_file(cli: &UniversalFlags, cmd: RunSubcommand) -> anyhow::Resu
     if cmd.build_flags.enable_value_tracing {
         build_package_command.push("-enable-value-tracing".to_string());
     }
-    let link_core_command = vec![
+    let mut link_core_command = vec![
         "link-core".to_string(),
-        moonutil::moon_dir::core_core(target_backend)
-            .display()
-            .to_string(),
+        // dirty workaround for now
+        moonutil::moon_dir::core_core(target_backend)[0].clone(),
+        moonutil::moon_dir::core_core(target_backend)[1].clone(),
         output_artifact_path
             .join(format!("{}.core", file_name))
             .display()
@@ -156,24 +157,64 @@ fn run_single_mbt_file(cli: &UniversalFlags, cmd: RunSubcommand) -> anyhow::Resu
         target_backend.to_flag().to_string(),
     ];
 
-    let compile_exe_command = if target_backend == TargetBackend::Native {
-        let moon_lib_path = &MOON_DIRS.moon_lib_path;
-        let moon_include_path = &MOON_DIRS.moon_include_path;
-        let internal_tcc_path = &MOON_DIRS.internal_tcc_path;
+    let cc_default = moonutil::compiler_flags::CC::default();
+    if cc_default.is_msvc() && target_backend == TargetBackend::LLVM {
+        link_core_command.extend([
+            "-llvm-target".to_string(),
+            "x86_64-pc-windows-msvc".to_string(),
+        ]);
+    }
 
-        Some(vec![
-            internal_tcc_path.display().to_string(),
+    // runtime.c on Windows cannot be built with tcc
+    // it's expensive to use cl.exe to build one first
+    // and then use tcc to load it
+    let use_tcc_run =
+        !cfg!(windows) && target_backend == TargetBackend::Native && !cmd.build_flags.release;
+
+    let moon_lib_path = &MOON_DIRS.moon_lib_path;
+
+    let compile_exe_command = if use_tcc_run {
+        let tcc_run_command = vec![
+            MOON_DIRS.internal_tcc_path.display().to_string(),
+            format!("-I{}", MOON_DIRS.moon_include_path.display()),
+            format!("-L{}", MOON_DIRS.moon_lib_path.display()),
             moon_lib_path.join("runtime.c").display().to_string(),
-            output_wasm_or_js_path.display().to_string(),
-            format!("-L{}", moon_lib_path.display()),
-            format!("-I{}", moon_include_path.display()),
+            "-lm".to_string(),
             "-DMOONBIT_NATIVE_NO_SYS_HEADER".to_string(),
-            "-o".to_string(),
-            output_wasm_or_js_path
+            "-run".to_string(),
+            output_wasm_or_js_path.display().to_string(),
+        ];
+        Some(tcc_run_command)
+    } else if target_backend == TargetBackend::Native || target_backend == TargetBackend::LLVM {
+        let cc_cmd = moonutil::compiler_flags::make_cc_command(
+            cc_default,
+            None,
+            moonutil::compiler_flags::CCConfigBuilder::default()
+                .no_sys_header(true)
+                .output_ty(moonutil::compiler_flags::OutputType::Executable)
+                .opt_level(moonutil::compiler_flags::OptLevel::None)
+                .debug_info(false)
+                .link_moonbitrun(false) // if use tcc, we cannot link moonbitrun
+                .define_use_shared_runtime_macro(false)
+                .build()
+                .unwrap(),
+            &[],
+            &[
+                moon_lib_path.join("runtime.c").display().to_string(),
+                output_wasm_or_js_path.display().to_string(),
+            ],
+            &output_wasm_or_js_path
+                .parent()
+                .unwrap()
+                .display()
+                .to_string(),
+            &output_wasm_or_js_path
                 .with_extension("exe")
                 .display()
                 .to_string(),
-        ])
+        );
+
+        Some(cc_cmd)
     } else {
         None
     };
@@ -185,12 +226,19 @@ fn run_single_mbt_file(cli: &UniversalFlags, cmd: RunSubcommand) -> anyhow::Resu
             println!("{}", compile_exe_command.join(" "));
         }
         if !cmd.build_only {
-            let runner = match target_backend {
-                TargetBackend::Wasm | TargetBackend::WasmGC => "moonrun",
-                TargetBackend::Js => "node",
-                TargetBackend::Native | TargetBackend::LLVM => "",
-            };
-            println!("{} {}", runner, output_wasm_or_js_path.display());
+            match target_backend {
+                TargetBackend::Wasm | TargetBackend::WasmGC => {
+                    println!("moonrun {}", output_wasm_or_js_path.display());
+                }
+                TargetBackend::Js => {
+                    println!("node {}", output_wasm_or_js_path.display());
+                }
+                TargetBackend::Native | TargetBackend::LLVM => {
+                    if !use_tcc_run {
+                        println!("{}", output_wasm_or_js_path.with_extension("exe").display());
+                    }
+                }
+            }
         }
         return Ok(0);
     }
@@ -245,11 +293,17 @@ fn run_single_mbt_file(cli: &UniversalFlags, cmd: RunSubcommand) -> anyhow::Resu
         TargetBackend::Js => {
             moonbuild::build::run_js(&output_wasm_or_js_path, &cmd.args, cli.verbose)
         }
-        TargetBackend::Native | TargetBackend::LLVM => moonbuild::build::run_native(
-            &output_wasm_or_js_path.with_extension("exe"),
-            &cmd.args,
-            cli.verbose,
-        ),
+        TargetBackend::Native | TargetBackend::LLVM => {
+            if !use_tcc_run {
+                moonbuild::build::run_native(
+                    &output_wasm_or_js_path.with_extension("exe"),
+                    &cmd.args,
+                    cli.verbose,
+                )
+            } else {
+                Ok(())
+            }
+        }
     })?;
 
     Ok(0)
@@ -331,14 +385,16 @@ pub fn run_run_internal(cli: &UniversalFlags, cmd: RunSubcommand) -> anyhow::Res
         no_parallelize: false,
         parallelism: cmd.build_flags.jobs,
         use_tcc_run: false,
+        dynamic_stub_libs: None,
     };
 
-    let mut module = scan_with_pre_build(
+    let mut module = scan_with_x_build(
         false,
         &moonc_opt,
         &moonbuild_opt,
         &resolved_env,
         &dir_sync_result,
+        &PrePostBuild::PreBuild,
     )?;
 
     let pkg = module.get_package_by_path_mut(&package).unwrap();
@@ -346,10 +402,8 @@ pub fn run_run_internal(cli: &UniversalFlags, cmd: RunSubcommand) -> anyhow::Res
 
     moonutil::common::set_native_backend_link_flags(
         run_mode,
-        cmd.build_flags.release,
         cmd.build_flags.target_backend,
         &mut module,
-        moonbuild_opt.use_tcc_run,
     )?;
 
     if cli.dry_run {
@@ -360,7 +414,6 @@ pub fn run_run_internal(cli: &UniversalFlags, cmd: RunSubcommand) -> anyhow::Res
     if trace_flag {
         trace::open("trace.json").context("failed to open `trace.json`")?;
     }
-
     let result = entry::run_run(
         &package_path,
         &moonc_opt,

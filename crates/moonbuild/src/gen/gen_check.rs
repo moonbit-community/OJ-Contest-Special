@@ -17,6 +17,7 @@
 // For inquiries, you can contact us via e-mail at jichuruanjian@idea.edu.cn.
 
 use super::cmd_builder::CommandBuilder;
+use super::gen_build::{gen_build_interface_command, gen_build_interface_item, BuildInterfaceItem};
 use super::n2_errors::{N2Error, N2ErrorKind};
 use super::util::self_in_test_import;
 use crate::gen::MiAlias;
@@ -27,7 +28,9 @@ use moonutil::package::Package;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use moonutil::common::{get_desc_name, CheckOpt, MoonbuildOpt, MooncOpt, MOON_PKG_JSON};
+use moonutil::common::{
+    get_desc_name, CheckOpt, MoonbuildOpt, MooncOpt, MOON_PKG_JSON, SUB_PKG_POSTFIX,
+};
 use n2::graph::{self as n2graph, Build, BuildIns, BuildOuts, FileLoc};
 use n2::load::State;
 use n2::smallmap::SmallMap;
@@ -42,24 +45,40 @@ pub struct CheckDepItem {
     pub warn_list: Option<String>,
     pub alert_list: Option<String>,
     pub is_main: bool,
+    pub is_third_party: bool,
     pub patch_file: Option<PathBuf>,
     pub no_mi: bool,
     pub is_whitebox_test: bool,
     pub is_blackbox_test: bool,
+
+    pub need_check_default_virtual: bool,
+    // which virtual pkg to implement (mi path, virtual pkg name, virtual pkg path)
+    pub mi_of_virtual_pkg_to_impl: Option<(String, String, String)>,
 }
 
 #[derive(Debug)]
 pub struct N2CheckInput {
     pub dep_items: Vec<CheckDepItem>,
+    pub check_interface_items: Vec<BuildInterfaceItem>,
 }
 
 fn pkg_to_check_item(
+    m: &ModuleDB,
     source_dir: &Path,
     packages: &IndexMap<String, Package>,
     pkg: &Package,
     moonc_opt: &MooncOpt,
+    need_check_default_virtual: bool,
 ) -> anyhow::Result<CheckDepItem> {
-    let out = pkg.artifact.with_extension("mi");
+    let mut out = pkg.artifact.with_extension("mi");
+    if need_check_default_virtual {
+        let file_stem = format!(
+            "{}_{}",
+            out.file_stem().unwrap().to_str().unwrap(),
+            "default.mi"
+        );
+        out = out.with_file_name(file_stem);
+    }
 
     let backend_filtered = moonutil::common::backend_filter(
         &pkg.files,
@@ -74,7 +93,7 @@ fn pkg_to_check_item(
     let mut mi_deps = vec![];
 
     for dep in pkg.imports.iter() {
-        let full_import_name = dep.path.make_full_path();
+        let mut full_import_name = dep.path.make_full_path();
         if !packages.contains_key(&full_import_name) {
             bail!(
                 "{}: the imported package `{}` could not be located.",
@@ -85,6 +104,9 @@ fn pkg_to_check_item(
                 full_import_name,
             );
         }
+        if dep.sub_package {
+            full_import_name = format!("{}{}", full_import_name, SUB_PKG_POSTFIX);
+        }
         let cur_pkg = &packages[&full_import_name];
         let d = cur_pkg.artifact.with_extension("mi");
         let alias = dep.alias.clone().unwrap_or(cur_pkg.last_name().into());
@@ -94,8 +116,30 @@ fn pkg_to_check_item(
         });
     }
 
-    let package_full_name = pkg.full_name();
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    };
     let package_source_dir: String = pkg.root_path.to_string_lossy().into_owned();
+
+    let impl_virtual_pkg = if let Some(impl_virtual_pkg) = pkg.implement.as_ref() {
+        let impl_virtual_pkg = m.get_package_by_name(impl_virtual_pkg);
+
+        let virtual_pkg_mi = impl_virtual_pkg
+            .artifact
+            .with_extension("mi")
+            .display()
+            .to_string();
+
+        Some((
+            virtual_pkg_mi,
+            impl_virtual_pkg.full_name(),
+            impl_virtual_pkg.root_path.display().to_string(),
+        ))
+    } else {
+        None
+    };
 
     Ok(CheckDepItem {
         mi_out: out.display().to_string(),
@@ -106,6 +150,7 @@ fn pkg_to_check_item(
         warn_list: pkg.warn_list.clone(),
         alert_list: pkg.alert_list.clone(),
         is_main: pkg.is_main,
+        is_third_party: pkg.is_third_party,
         is_whitebox_test: false,
         is_blackbox_test: false,
         patch_file: pkg.patch_file.as_ref().and_then(|p| {
@@ -113,6 +158,8 @@ fn pkg_to_check_item(
             (!file_stem.ends_with("_wbtest") && !file_stem.ends_with("_test")).then_some(p.clone())
         }),
         no_mi: pkg.no_mi,
+        mi_of_virtual_pkg_to_impl: impl_virtual_pkg,
+        need_check_default_virtual,
     })
 }
 
@@ -147,7 +194,7 @@ fn pkg_with_wbtest_to_check_item(
     let mut mi_deps = vec![];
 
     for dep in pkg.imports.iter().chain(pkg.wbtest_imports.iter()) {
-        let full_import_name = dep.path.make_full_path();
+        let mut full_import_name = dep.path.make_full_path();
         if !packages.contains_key(&full_import_name) {
             bail!(
                 "{}: the imported package `{}` could not be located.",
@@ -158,6 +205,9 @@ fn pkg_with_wbtest_to_check_item(
                 full_import_name,
             );
         }
+        if dep.sub_package {
+            full_import_name = format!("{}{}", full_import_name, SUB_PKG_POSTFIX);
+        }
         let cur_pkg = &packages[&full_import_name];
         let d = cur_pkg.artifact.with_extension("mi");
         let alias = dep.alias.clone().unwrap_or(cur_pkg.last_name().into());
@@ -167,7 +217,11 @@ fn pkg_with_wbtest_to_check_item(
         });
     }
 
-    let package_full_name = pkg.full_name();
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    };
     let package_source_dir: String = pkg.root_path.to_string_lossy().into_owned();
 
     Ok(CheckDepItem {
@@ -179,6 +233,7 @@ fn pkg_with_wbtest_to_check_item(
         warn_list: pkg.warn_list.clone(),
         alert_list: pkg.alert_list.clone(),
         is_main: pkg.is_main,
+        is_third_party: pkg.is_third_party,
         is_whitebox_test: true,
         is_blackbox_test: false,
         patch_file: pkg.patch_file.as_ref().and_then(|p| {
@@ -190,6 +245,8 @@ fn pkg_with_wbtest_to_check_item(
                 .then_some(p.clone())
         }),
         no_mi: pkg.no_mi,
+        mi_of_virtual_pkg_to_impl: None,
+        need_check_default_virtual: false,
     })
 }
 
@@ -250,7 +307,7 @@ fn pkg_with_test_to_check_item(
     }
 
     for dep in pkg.imports.iter().chain(pkg.test_imports.iter()) {
-        let full_import_name = dep.path.make_full_path();
+        let mut full_import_name = dep.path.make_full_path();
         if !packages.contains_key(&full_import_name) {
             bail!(
                 "{}: the imported package `{}` could not be located.",
@@ -260,6 +317,9 @@ fn pkg_with_test_to_check_item(
                     .display(),
                 full_import_name,
             );
+        }
+        if dep.sub_package {
+            full_import_name = format!("{}{}", full_import_name, SUB_PKG_POSTFIX);
         }
         let cur_pkg = &packages[&full_import_name];
         let d = cur_pkg.artifact.with_extension("mi");
@@ -272,7 +332,11 @@ fn pkg_with_test_to_check_item(
 
     // this is used for `-pkg` flag in `moonc check`, shouldn't be `pkg.full_name()` since we aren't check that package, otherwise we might encounter an error like "4015] Error: Type StructName has no method method_name"(however, StructName does has method method_name).
     // actually, `-pkg` flag is not necessary for blackbox test, but we still keep it for consistency
-    let package_full_name = pkg.full_name() + "_blackbox_test";
+    let package_full_name = if pkg.is_sub_package {
+        pkg.full_name().replace(SUB_PKG_POSTFIX, "")
+    } else {
+        pkg.full_name()
+    } + "_blackbox_test";
     let package_source_dir: String = pkg.root_path.to_string_lossy().into_owned();
 
     Ok(CheckDepItem {
@@ -284,17 +348,24 @@ fn pkg_with_test_to_check_item(
         warn_list: pkg.warn_list.clone(),
         alert_list: pkg.alert_list.clone(),
         is_main: pkg.is_main,
+        is_third_party: pkg.is_third_party,
         is_whitebox_test: false,
         is_blackbox_test: true,
-        patch_file: pkg.patch_file.as_ref().and_then(|p| {
-            p.file_stem()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .ends_with("_test")
-                .then_some(p.clone())
-        }),
+        patch_file: pkg
+            .patch_file
+            .as_ref()
+            .and_then(|p| {
+                p.file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .ends_with("_test")
+                    .then_some(p.clone())
+            })
+            .or(pkg.doc_test_patch_file.clone()),
         no_mi: pkg.no_mi,
+        mi_of_virtual_pkg_to_impl: None,
+        need_check_default_virtual: false,
     })
 }
 
@@ -306,6 +377,7 @@ pub fn gen_check(
     let _ = moonc_opt;
     let _ = moonbuild_opt;
     let mut dep_items = vec![];
+    let mut check_interface_items = vec![];
 
     // if pkg is specified, check that pkg and it's deps; if no pkg specified, check all pkgs
     let pkgs_to_check = if let Some(CheckOpt {
@@ -319,8 +391,26 @@ pub fn gen_check(
     };
 
     for (_, pkg) in pkgs_to_check {
-        let item = pkg_to_check_item(&pkg.root_path, pkgs_to_check, pkg, moonc_opt)?;
-        dep_items.push(item);
+        // skip virtual moonbitlang/core/abort (gen_moonbitlang_abort_pkg)
+        if pkg
+            .full_name()
+            .starts_with(moonutil::common::MOONBITLANG_CORE)
+            && pkg.is_third_party
+        {
+            continue;
+        }
+
+        if pkg.virtual_pkg.is_none() {
+            let item = pkg_to_check_item(m, &pkg.root_path, pkgs_to_check, pkg, moonc_opt, false)?;
+            dep_items.push(item);
+        } else {
+            check_interface_items.push(gen_build_interface_item(m, pkg)?);
+            if pkg.virtual_pkg.as_ref().is_some_and(|v| v.has_default) {
+                let item =
+                    pkg_to_check_item(m, &pkg.root_path, pkgs_to_check, pkg, moonc_opt, true)?;
+                dep_items.push(item);
+            }
+        }
 
         // do not check test files for third party packages
         if !pkg.is_third_party {
@@ -329,7 +419,7 @@ pub fn gen_check(
                     pkg_with_wbtest_to_check_item(&pkg.root_path, pkgs_to_check, pkg, moonc_opt)?;
                 dep_items.push(item);
             }
-            if !pkg.test_files.is_empty() {
+            if !pkg.test_files.is_empty() || pkg.doc_test_patch_file.is_some() {
                 let item =
                     pkg_with_test_to_check_item(&pkg.root_path, pkgs_to_check, pkg, moonc_opt)?;
                 dep_items.push(item);
@@ -338,13 +428,17 @@ pub fn gen_check(
     }
 
     // dbg!(&dep_items);
-    Ok(N2CheckInput { dep_items })
+    Ok(N2CheckInput {
+        dep_items,
+        check_interface_items,
+    })
 }
 
 pub fn gen_check_command(
     graph: &mut n2graph::Graph,
     item: &CheckDepItem,
     moonc_opt: &MooncOpt,
+    need_check_default_virtual: bool,
 ) -> Build {
     let mi_output_id = graph.files.id_from_canonical(item.mi_out.clone());
     let loc = FileLoc {
@@ -352,8 +446,17 @@ pub fn gen_check_command(
         line: 0,
     };
 
+    let original_mi_out = item.mi_out.replace("_default", "");
+
     let mut inputs = item.mbt_deps.clone();
     inputs.extend(item.mi_deps.iter().map(|a| a.name.clone()));
+    // add $pkgname.mi as input if need_build_virtual since it is used by --check-mi
+    if need_check_default_virtual {
+        inputs.push(original_mi_out.clone());
+    }
+    if let Some((mi_path, _, _)) = item.mi_of_virtual_pkg_to_impl.as_ref() {
+        inputs.push(mi_path.clone());
+    }
 
     let input_ids = inputs
         .into_iter()
@@ -408,11 +511,12 @@ pub fn gen_check_command(
         .lazy_args_with_cond(item.alert_list.is_some(), || {
             vec!["-alert".to_string(), item.alert_list.clone().unwrap()]
         })
+        .args_with_cond(item.is_third_party, ["-w", "-a", "-alert", "-all"])
         .arg("-o")
         .arg(&item.mi_out)
         .arg("-pkg")
         .arg(&item.package_full_name)
-        .arg_with_cond(item.is_main, "-is-main")
+        .arg_with_cond(item.is_main && !item.is_blackbox_test, "-is-main")
         .args_with_cond(
             !moonc_opt.nostd,
             [
@@ -431,6 +535,19 @@ pub fn gen_check_command(
         .args(["-target", moonc_opt.build_opt.target_backend.to_flag()])
         .arg_with_cond(item.is_whitebox_test, "-whitebox-test")
         .arg_with_cond(item.is_blackbox_test, "-blackbox-test")
+        .args_with_cond(
+            need_check_default_virtual,
+            vec!["-check-mi".to_string(), original_mi_out],
+        )
+        .lazy_args_with_cond(item.mi_of_virtual_pkg_to_impl.as_ref().is_some(), || {
+            let (mi_path, pkg_name, pkg_path) = item.mi_of_virtual_pkg_to_impl.as_ref().unwrap();
+            vec![
+                "-check-mi".to_string(),
+                mi_path.clone(),
+                "-pkg-sources".to_string(),
+                format!("{}:{}", &pkg_name, &pkg_path,),
+            ]
+        })
         .build();
     log::debug!("Command: {}", command);
     build.cmdline = Some(command);
@@ -438,7 +555,7 @@ pub fn gen_check_command(
         "check: {}",
         get_desc_name(&item.package_full_name, &item.mi_out)
     ));
-    build.can_dirty_on_output = false;
+    build.can_dirty_on_output = true;
     build
 }
 
@@ -452,12 +569,20 @@ pub fn gen_n2_check_state(
     let mut graph = n2graph::Graph::default();
 
     for item in input.dep_items.iter() {
-        let build = gen_check_command(&mut graph, item, moonc_opt);
+        let build = gen_check_command(&mut graph, item, moonc_opt, item.need_check_default_virtual);
+        graph.add_build(build)?;
+    }
+
+    for item in input.check_interface_items.iter() {
+        let (build, _) = gen_build_interface_command(&mut graph, item, moonc_opt);
         graph.add_build(build)?;
     }
 
     let mut hashes = n2graph::Hashes::default();
     let n2_db_path = &target_dir.join("check.moon_db");
+    if !n2_db_path.parent().unwrap().exists() {
+        std::fs::create_dir_all(n2_db_path.parent().unwrap()).unwrap();
+    }
     let db = n2::db::open(n2_db_path, &mut graph, &mut hashes).map_err(|e| N2Error {
         source: N2ErrorKind::DBOpenError(e),
     })?;

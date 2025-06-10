@@ -30,13 +30,14 @@ use mooncake::pkg::sync::auto_sync;
 use moonutil::{
     common::{
         lower_surface_targets, read_module_desc_file_in_dir, FileLock, MoonbuildOpt, MooncOpt,
-        RunMode, SurfaceTarget, TargetBackend, MOONBITLANG_CORE, MOON_MOD_JSON,
+        PrePostBuild, RunMode, SurfaceTarget, TargetBackend, MOONBITLANG_CORE, MOON_MOD_JSON,
     },
     dirs::{mk_arch_mode_dir, PackageDirs},
     mooncakes::{sync::AutoSyncFlags, RegistryConfig},
+    package::Package,
 };
 
-use super::{pre_build::scan_with_pre_build, UniversalFlags};
+use super::{pre_build::scan_with_x_build, UniversalFlags};
 
 /// Generate public interface (`.mbti`) files for all packages in the module
 #[derive(Debug, Clone, clap::Parser)]
@@ -208,14 +209,16 @@ pub fn run_info_internal(
         build_graph: false,
         parallelism: None,
         use_tcc_run: false,
+        dynamic_stub_libs: None,
     };
 
-    let mdb = scan_with_pre_build(
+    let mdb = scan_with_x_build(
         false,
         &moonc_opt,
         &moonbuild_opt,
         &resolved_env,
         &dir_sync_result,
+        &PrePostBuild::PreBuild,
     )?;
 
     let check_result = moonbuild::entry::run_check(&moonc_opt, &moonbuild_opt, &mdb);
@@ -233,23 +236,35 @@ pub fn run_info_internal(
         Some(p) => source_dir.join(p),
     };
 
-    let mbti_files = Arc::new(Mutex::new(vec![]));
+    let package_filter = if let Some(pkg_name) = &cmd.package {
+        let all_packages: indexmap::IndexSet<&str> = mdb
+            .get_all_packages()
+            .iter()
+            .map(|pkg| pkg.0.as_str())
+            .collect();
 
-    if let Some(pkg_name) = &cmd.package {
-        if mdb.get_package_by_name_safe(pkg_name).is_none() {
-            bail!("package `{}` not found, make sure you have spelled it correctly, e.g. `moonbitlang/core/hashmap`", pkg_name);
+        let mut final_set = indexmap::IndexSet::new();
+        if all_packages.contains(pkg_name.as_str()) {
+            // exact matching
+            final_set.insert(pkg_name.to_string());
+        } else {
+            let xs =
+                moonutil::fuzzy_match::fuzzy_match(pkg_name.as_str(), all_packages.iter().copied());
+            if let Some(xs) = xs {
+                final_set.extend(xs);
+            }
         }
-    }
-    let packages_to_emit_mbti = mdb.get_all_packages().iter().filter_map(|(name, pkg)| {
-        match &cmd.package {
-            // if specified package name, only return the specified package
-            Some(pkg_name) if name == pkg_name => Some((name, pkg)),
-            // if specified package name but not match, return None
-            Some(_) => None,
-            // if not specified package name, return all packages
-            None => Some((name, pkg)),
+        if final_set.is_empty() {
+            bail!("package `{}` not found, make sure you have spelled it correctly, e.g. `moonbitlang/core/hashmap`(exact match) or `hashmap`(fuzzy match)", pkg_name);
         }
-    });
+        Some(move |pkg: &Package| final_set.contains(&pkg.full_name()))
+    } else {
+        None
+    };
+
+    let packages_to_emit_mbti = mdb.get_filtered_packages(package_filter);
+
+    let mbti_files = Arc::new(Mutex::new(vec![]));
 
     for (name, pkg) in packages_to_emit_mbti {
         // Skip if pkg is not part of the module
@@ -309,7 +324,6 @@ pub fn run_info_internal(
 
     // `try_join_all` will return immediately if anyone task fail
     runtime.block_on(try_join_all(handlers))?;
-
     let mbti_files = mbti_files.lock().unwrap().clone();
     Ok(mbti_files)
 }

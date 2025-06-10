@@ -25,11 +25,10 @@ use moonutil::mooncakes::RegistryConfig;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use moonutil::common::{
-    MoonbuildOpt, MooncOpt, RunMode, MOON_MOD_JSON, MOON_PKG_JSON, WATCH_MODE_DIR,
+    MoonbuildOpt, MooncOpt, RunMode, DOT_MBT_DOT_MD, MOON_MOD_JSON, MOON_PKG_JSON, WATCH_MODE_DIR,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 pub fn watching(
     moonc_opt: &MooncOpt,
@@ -41,23 +40,23 @@ pub fn watching(
     run_and_print(moonc_opt, moonbuild_opt, module)?;
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let tx_for_exit = tx.clone();
     let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
 
-    let exit_flag = Arc::new(AtomicBool::new(false));
     {
-        let r = Arc::clone(&exit_flag);
-        ctrlc::set_handler(move || {
-            let exit_signal = notify::Event::new(notify::EventKind::Other);
-            r.store(true, Ordering::SeqCst);
-            let _ = tx_for_exit.send(Ok(exit_signal));
-        })
-        .expect("Error setting Ctrl-C handler");
+        // make sure the handler is only set once when --watch --target all
+        static HANDLER_SET: AtomicBool = AtomicBool::new(false);
+
+        if HANDLER_SET
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            ctrlc::set_handler(moonutil::common::dialoguer_ctrlc_handler)
+                .expect("Error setting Ctrl-C handler");
+        }
     }
 
     {
         // main thread
-        let exit_flag = Arc::clone(&exit_flag);
         watcher.watch(&moonbuild_opt.source_dir, RecursiveMode::Recursive)?;
 
         // in watch mode, moon is a long-running process that should handle errors as much as possible rather than throwing them up and then exiting.
@@ -65,10 +64,6 @@ pub fn watching(
             match res {
                 Ok(event) => {
                     match event.kind {
-                        // receive quit signal (ctrl+c)
-                        EventKind::Other if exit_flag.load(Ordering::SeqCst) => {
-                            break;
-                        }
                         // when a file was modified, multiple events may be received, we only care about data those modified data
                         #[cfg(unix)]
                         EventKind::Modify(notify::event::ModifyKind::Data(_)) => {
@@ -148,12 +143,20 @@ fn handle_file_change(
         ))?;
     }
 
-    if event
-        .paths
-        .iter()
-        .any(|p| p.ends_with(MOON_MOD_JSON) || p.ends_with(MOON_PKG_JSON))
-    {
+    let mut need_new_module = false;
+    let mut cur_mbt_md_path = String::new();
+    for p in &event.paths {
+        if p.display().to_string().ends_with(DOT_MBT_DOT_MD) {
+            cur_mbt_md_path = p.display().to_string();
+        }
         // we need to get the latest ModuleDB when moon.pkg.json || moon.mod.json is changed
+        if p.ends_with(MOON_MOD_JSON) || p.ends_with(MOON_PKG_JSON) {
+            need_new_module = true;
+            break;
+        }
+    }
+
+    if need_new_module {
         let (resolved_env, dir_sync_result) = match auto_sync(
             source_dir,
             &AutoSyncFlags { frozen: false },
@@ -168,6 +171,7 @@ fn handle_file_change(
         };
         let module = match moonutil::scan::scan(
             false,
+            None,
             &resolved_env,
             &dir_sync_result,
             moonc_opt,
@@ -181,6 +185,15 @@ fn handle_file_change(
         };
         run_and_print(moonc_opt, moonbuild_opt, &module)?;
     } else {
+        if cur_mbt_md_path.ends_with(DOT_MBT_DOT_MD) {
+            for (_, pkg) in module.get_all_packages() {
+                for (p, _) in &pkg.mbt_md_files {
+                    if p.display().to_string() == cur_mbt_md_path {
+                        let _ = moonutil::doc_test::gen_md_test_patch(pkg, moonc_opt)?;
+                    }
+                }
+            }
+        }
         run_and_print(moonc_opt, moonbuild_opt, module)?;
     }
     Ok(Some(()))

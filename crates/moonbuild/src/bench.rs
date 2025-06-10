@@ -115,6 +115,10 @@ pub fn f() -> Unit {{
                 bin_target: None,
                 supported_targets: None,
                 native_stub: None,
+                virtual_pkg: None,
+                implement: None,
+                overrides: None,
+                sub_package: None,
             };
             moonutil::common::write_package_json_to_file(&pkg, &moon_pkg).unwrap();
         }
@@ -150,6 +154,10 @@ pub fn write(config: &Config, base_dir: &Path) {
 
         include: None,
         exclude: None,
+
+        scripts: None,
+
+        __moonbit_unstable_prebuild: None,
     };
     moonutil::common::write_module_json_to_file(&module, base_dir).unwrap();
     fs::create_dir_all(base_dir.join("main")).unwrap();
@@ -206,6 +214,10 @@ pub fn write(config: &Config, base_dir: &Path) {
         bin_target: None,
         supported_targets: None,
         native_stub: None,
+        virtual_pkg: None,
+        implement: None,
+        overrides: None,
+        sub_package: None,
     };
 
     moonutil::common::write_package_json_to_file(&pkg, &base_dir.join("main").join(MOON_PKG_JSON))
